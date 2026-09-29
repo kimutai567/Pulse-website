@@ -1,6 +1,6 @@
 # Pulse
 
-Pulse is a community finance workspace for savings circles and other member-led groups. The frontend is being built first around the **Upendo Circle** workspace, with Supabase integration planned for the next phase.
+Pulse is a community finance workspace for savings circles and other member-led groups. The product is being built around the **Upendo Circle** workspace, with Supabase providing email OTP authentication and the initial database foundation.
 
 ## Features
 
@@ -15,7 +15,7 @@ Pulse is a community finance workspace for savings circles and other member-led 
 
 ## Frontend-first behavior
 
-The frontend currently uses local data stored in the React components. Actions update the interface locally and show confirmation messages while the backend, authentication, and payment workflows are being implemented.
+The dashboard currently uses local demo data stored in the React components. Authentication is connected to Supabase email OTP, while financial actions remain local until their data queries and mutations are wired.
 
 Use the **View as** selector in the top bar to preview the Member, Accountant, Chairman, and System admin experiences.
 
@@ -69,9 +69,10 @@ npm run preview
 ├── package.json        # Scripts and dependencies
 ├── vite.config.ts      # Vite configuration
 └── src/
-    ├── App.tsx         # Dashboard UI, demo state, and role views
+    ├── App.tsx         # Dashboard UI, Supabase auth, demo state, and role views
     ├── main.tsx        # React application entry point
-    └── styles.css      # Responsive visual design and layout styles
+    ├── styles.css      # Responsive visual design and layout styles
+    └── lib/supabase.ts # Supabase client configuration
 ```
 
 ## Available scripts
@@ -91,3 +92,9 @@ Potential next steps for turning the prototype into a production product include
 - Integrate payment verification with a supported payment provider
 - Add server-side audit history and notifications
 - Add automated tests for financial workflows and permission boundaries
+
+## Supabase setup
+
+1. Copy `.env.example` to `.env.local` and add the Supabase project URL and publishable key.
+2. Run `supabase/migrations/001_initial_schema.sql` in the Supabase SQL Editor.
+3. Enable Email authentication and configure the email template to include `{{ .Token }}` for OTP login.
