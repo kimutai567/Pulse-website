@@ -1,15 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Activity, ArrowDownLeft, ArrowUpRight, BadgeCheck, Bell, CalendarDays,
   ChartNoAxesColumnIncreasing, Check, CheckCircle2, ChevronDown, ChevronRight,
   CircleHelp, Clock3, Coins, CreditCard, FileClock, Gavel,
   HandCoins, HeartHandshake, Home, Landmark, Menu, MessageSquareText,
-  MoreHorizontal, Plus, RotateCcw, Settings, ShieldCheck, Sparkles, Users,
+  MoreHorizontal, Plus, RotateCcw, Settings, ShieldCheck, Users,
   Vote, Wallet, X,
 } from 'lucide-react';
 import {
   Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
+import { supabase } from './lib/supabase';
 
 type Role = 'MEMBER' | 'ACCOUNTANT' | 'CHAIRMAN' | 'SYSTEM_ADMIN';
 type Page = 'Overview' | 'Contributions' | 'Rotation' | 'Loans' | 'Reserve & dividends' | 'Votes & proposals' | 'Activity';
@@ -44,6 +45,8 @@ const transactions = [
 const fmt = (amount: number) => `KES ${amount.toLocaleString('en-KE')}`;
 
 function App() {
+  const [authenticated, setAuthenticated] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
   const [role, setRole] = useState<Role>('MEMBER');
   const [page, setPage] = useState<Page>('Overview');
   const [modal, setModal] = useState<Modal>(null);
@@ -52,6 +55,26 @@ function App() {
   const [vote, setVote] = useState<'yes' | 'no' | null>(null);
   const [paymentCode, setPaymentCode] = useState('');
   const [loanAmount, setLoanAmount] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      setAuthenticated(Boolean(data.session));
+      setAuthLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthenticated(Boolean(session));
+      setAuthLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const roleTitle: Record<Role, string> = {
     MEMBER: 'Member', ACCOUNTANT: 'Accountant', CHAIRMAN: 'Chairman', SYSTEM_ADMIN: 'System admin',
@@ -75,7 +98,15 @@ function App() {
     if (!loanAmount || Number(loanAmount) <= 0) return;
     setModal(null);
     setLoanAmount('');
-    flash('Loan request submitted. Eligibility checks are shown in this demo.');
+    flash('Loan request submitted for review.');
+  }
+
+  if (authLoading) {
+    return <main className="auth-shell"><section className="auth-card"><div className="auth-brand"><span className="brand-mark"><Activity size={21} strokeWidth={2.7} /></span><span className="brand-name">pulse<span>.</span></span></div><p className="auth-copy">Checking your secure session...</p></section></main>;
+  }
+
+  if (!authenticated) {
+    return <LoginScreen />;
   }
 
   return (
@@ -86,7 +117,7 @@ function App() {
           <span className="brand-name">pulse<span>.</span></span>
         </a>
 
-        <button className="container-select" onClick={() => flash('You are viewing the Upendo Circle demo container.')}>
+        <button className="container-select" onClick={() => flash('Upendo Circle workspace selected.')}>
           <span className="container-avatar">U</span>
           <span className="container-copy"><strong>Upendo Circle</strong><small>Community · 8 members</small></span>
           <ChevronDown size={15} className="muted-icon" />
@@ -108,7 +139,7 @@ function App() {
         <button className="nav-link" onClick={() => flash('Account settings are available to invited members.')}><Settings size={17} strokeWidth={1.8} /><span>Settings</span></button>
 
         <div className="sidebar-bottom">
-          <div className="help-card"><span className="help-icon"><CircleHelp size={16} /></span><strong>Need a hand?</strong><span>We’re here to help your group grow.</span><button onClick={() => flash('Help centre opened in demo mode.')}>Visit help centre <ArrowUpRight size={13} /></button></div>
+          <div className="help-card"><span className="help-icon"><CircleHelp size={16} /></span><strong>Need a hand?</strong><span>We’re here to help your group grow.</span><button onClick={() => flash('Help centre opened.')}>Visit help centre <ArrowUpRight size={13} /></button></div>
           <div className="profile-row"><div className="profile-avatar">AM</div><div className="profile-copy"><strong>Amina Mwangi</strong><span>{roleTitle[role]}</span></div><button className="icon-button profile-more" aria-label="Profile options" onClick={() => flash('Profile options')}><MoreHorizontal size={19} /></button></div>
         </div>
       </aside>
@@ -128,8 +159,6 @@ function App() {
         </header>
 
         <div className="page-content">
-          <div className="demo-banner"><Sparkles size={14} /><span><strong>Preview mode</strong><span className="banner-separator">·</span>Sample data for the Pulse product demo</span><button onClick={() => flash('This prototype does not process real money or personal information.')}>About this demo <ArrowUpRight size={12} /></button></div>
-
           <section className="welcome-row">
             <div><div className="eyebrow"><span className="eyebrow-line" /> FRIDAY, 25 SEPTEMBER 2026</div><h1>{page !== 'Overview' ? page : role === 'MEMBER' ? 'Good morning, Amina' : role === 'ACCOUNTANT' ? 'Financial approvals' : role === 'CHAIRMAN' ? 'Circle governance' : 'System operations'}</h1><p className="welcome-subtitle">{page !== 'Overview' ? `Your Upendo Circle ${page.toLowerCase()} at a glance.` : role === 'MEMBER' ? 'Here’s what’s happening with your circle today.' : role === 'ACCOUNTANT' ? 'Verify contributions, review disbursements and reconcile circle transactions.' : role === 'CHAIRMAN' ? 'Support members and keep circle governance moving.' : 'Monitor containers, scheduled jobs and the Pulse system.'}</p></div>
             <div className="welcome-actions"><button className="button button-quiet" onClick={() => flash(role === 'CHAIRMAN' ? 'Opening active proposals.' : role === 'SYSTEM_ADMIN' ? 'System report is being prepared.' : 'Your monthly report is being prepared.')}><ChartNoAxesColumnIncreasing size={16} /> {role === 'CHAIRMAN' ? 'Proposals' : role === 'SYSTEM_ADMIN' ? 'System report' : 'Reports'}</button>{role === 'MEMBER' ? <button className="button button-primary" onClick={() => setModal('payment')}><Plus size={17} /> Log a payment</button> : role === 'ACCOUNTANT' ? <button className="button button-primary" onClick={() => flash('Financial approval queue refreshed.')}><RotateCcw size={15} /> Refresh queue</button> : role === 'CHAIRMAN' ? <button className="button button-primary" onClick={() => flash('Complaint review opened in demo mode.')}><MessageSquareText size={15} /> Review complaint</button> : <button className="button button-primary" onClick={() => flash('New container setup opened in demo mode.')}><Plus size={17} /> Create container</button>}</div>
@@ -172,7 +201,7 @@ function App() {
               <section className="vote-card"><div className="vote-topline"><span className="vote-icon"><Vote size={16} /></span><span className="vote-open">VOTE OPEN</span><span className="vote-deadline">Closes in 2 days</span></div><h2>Group reserve use</h2><p>Approve KES 8,000 for shared meeting space equipment.</p><div className="vote-stats"><span><Users size={14} /> 5 of 8 responded</span><span>Required: 5 votes</span></div><div className="vote-progress"><span style={{ width: '62.5%' }} /></div><div className="vote-actions"><button className={`vote-yes ${vote === 'yes' ? 'vote-selected' : ''}`} onClick={() => { setVote('yes'); flash('Your yes vote has been recorded in the demo.'); }}><Check size={15} /> Yes, approve</button><button className={`vote-no ${vote === 'no' ? 'vote-selected' : ''}`} onClick={() => { setVote('no'); flash('Your no vote has been recorded in the demo.'); }}><X size={15} /> No</button></div></section></div>
           </div>
 
-          <footer className="page-footer"><span>Pulse <b>·</b> Community finance, together.</span><span><ShieldCheck size={13} /> Your circle. Your information stays private.</span><button onClick={() => flash('Pulse demo · Version 0.1')}>Demo v0.1</button></footer>
+          <footer className="page-footer"><span>Pulse <b>·</b> Community finance, together.</span><span><ShieldCheck size={13} /> Your circle. Your information stays private.</span><button onClick={() => flash('Pulse privacy and security settings.')}>Privacy &amp; security</button></footer>
           </> : role === 'ACCOUNTANT' ? <AccountantDashboard onNotify={flash} /> : role === 'CHAIRMAN' ? <ChairmanDashboard onNotify={flash} /> : <AdminDashboard onNotify={flash} />}
         </div>
       </main>
@@ -181,6 +210,82 @@ function App() {
 
       {notice && <div className="toast" role="status"><BadgeCheck size={17} />{notice}<button aria-label="Dismiss notification" onClick={() => setNotice('')}><X size={15} /></button></div>}
     </div>
+  );
+}
+
+function LoginScreen() {
+  const [step, setStep] = useState<'email' | 'otp'>('email');
+  const [email, setEmail] = useState('');
+  const [otp, setOtp] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  async function requestCode(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      setError('Enter a valid email address to continue.');
+      return;
+    }
+    setError('');
+    setSubmitting(true);
+    const { error: requestError } = await supabase.auth.signInWithOtp({
+      email: email.trim().toLowerCase(),
+      options: { shouldCreateUser: true },
+    });
+    setSubmitting(false);
+    if (requestError) {
+      setError(requestError.message);
+      return;
+    }
+    setStep('otp');
+  }
+
+  async function verifyCode(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!/^\d{6}$/.test(otp)) {
+      setError('Enter the 6-digit verification code.');
+      return;
+    }
+    setError('');
+    setSubmitting(true);
+    const { error: verificationError } = await supabase.auth.verifyOtp({
+      email: email.trim().toLowerCase(),
+      token: otp,
+      type: 'email',
+    });
+    setSubmitting(false);
+    if (verificationError) setError(verificationError.message);
+  }
+
+  return (
+    <main className="auth-shell">
+      <section className="auth-card" aria-labelledby="auth-title">
+        <div className="auth-brand"><span className="brand-mark"><Activity size={21} strokeWidth={2.7} /></span><span className="brand-name">pulse<span>.</span></span></div>
+        <div className="auth-kicker">UPENDO CIRCLE</div>
+        {step === 'email' ? <>
+          <h1 id="auth-title">Welcome back</h1>
+          <p className="auth-copy">Sign in to view your savings, contributions, and circle activity.</p>
+          <form className="auth-form" onSubmit={requestCode}>
+            <label htmlFor="email">Email address</label>
+            <input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" autoFocus />
+            {error && <p className="auth-error" role="alert">{error}</p>}
+            <button className="button button-primary auth-submit" type="submit" disabled={submitting}>{submitting ? 'Sending code...' : <>Continue <ChevronRight size={16} /></>}</button>
+          </form>
+          <p className="auth-note"><ShieldCheck size={14} /> Your email is used only to secure your account.</p>
+        </> : <>
+          <button className="auth-back" type="button" onClick={() => { setStep('email'); setError(''); }}><ArrowDownLeft size={15} /> Change email</button>
+          <h1 id="auth-title">Enter your code</h1>
+          <p className="auth-copy">We sent a 6-digit verification code to <strong>{email}</strong>.</p>
+          <form className="auth-form" onSubmit={verifyCode}>
+            <label htmlFor="otp">Verification code</label>
+            <input id="otp" className="otp-input" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, ''))} placeholder="000000" autoComplete="one-time-code" autoFocus />
+            {error && <p className="auth-error" role="alert">{error}</p>}
+            <button className="button button-primary auth-submit" type="submit" disabled={submitting}>{submitting ? 'Verifying...' : <>Sign in <ChevronRight size={16} /></>}</button>
+          </form>
+          <p className="auth-note">Your verification code is sent by Supabase Auth.</p>
+        </>}
+      </section>
+    </main>
   );
 }
 
@@ -201,7 +306,7 @@ function AccountantDashboard({ onNotify }: { onNotify: (message: string) => void
       }
     }
     setReviewed((current) => ({ ...current, [id]: result }));
-    onNotify(`${id} ${result.toLowerCase()} in this demo.`);
+    onNotify(`${id} ${result.toLowerCase()}.`);
   }
 
   return <>

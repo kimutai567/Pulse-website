@@ -1,6 +1,6 @@
 # Pulse
 
-Pulse is a community finance dashboard for savings circles and other member-led groups. This project is an interactive product prototype built around the **Upendo Circle** demo workspace.
+Pulse is a community finance workspace for savings circles and other member-led groups. The frontend is being built first around the **Upendo Circle** workspace, with Supabase integration planned for the next phase.
 
 ## Features
 
@@ -13,9 +13,9 @@ Pulse is a community finance dashboard for savings circles and other member-led 
 - System admin workspace for container health and platform operations
 - Responsive layout with mobile navigation
 
-## Demo behavior
+## Frontend-first behavior
 
-The application currently uses sample data stored in the React components. Actions are simulated locally in the browser and show confirmation messages, but they do not process real payments, persist reco rds, or connect to a backend.
+The frontend currently uses local data stored in the React components. Actions update the interface locally and show confirmation messages while the backend, authentication, and payment workflows are being implemented.
 
 Use the **View as** selector in the top bar to preview the Member, Accountant, Chairman, and System admin experiences.
 
