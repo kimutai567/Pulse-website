@@ -12,7 +12,7 @@ Pulse is a community finance dashboard for savings circles and other member-led 
 - Chairman workspace for complaint review and governance recommendations
 - System admin workspace for container health and platform operations
 - Responsive layout with mobile navigation
-
+Members will be sent otp via Email
 ## Demo behavior
 
 The application currently uses sample data stored in the React components. Actions are simulated locally in the browser and show confirmation messages, but they do not process real payments, persist reco rds, or connect to a backend.
