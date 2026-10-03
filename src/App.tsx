@@ -10,11 +10,25 @@ import {
 import {
   Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
+import type { User } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 
 type Role = 'MEMBER' | 'ACCOUNTANT' | 'CHAIRMAN' | 'SYSTEM_ADMIN';
 type Page = 'Overview' | 'Contributions' | 'Rotation' | 'Loans' | 'Reserve & dividends' | 'Votes & proposals' | 'Activity';
 type Modal = 'payment' | 'loan' | null;
+type DemoPaymentStatus = 'PENDING' | 'VERIFIED' | 'REJECTED';
+type DemoPayment = {
+  id: string;
+  memberId: string;
+  member: string;
+  amount: number;
+  reference: string;
+  phone: string;
+  weekNumber: number;
+  createdAt: string;
+  status: DemoPaymentStatus;
+  rejectionReason?: string;
+};
 
 const navItems: { label: Page; icon: typeof Home }[] = [
   { label: 'Overview', icon: Home },
@@ -45,8 +59,12 @@ const transactions = [
 const fmt = (amount: number) => `KES ${amount.toLocaleString('en-KE')}`;
 
 function App() {
-  const [authenticated, setAuthenticated] = useState(false);
+  const previewMode = import.meta.env.DEV && (
+    !supabase || new URLSearchParams(window.location.search).get('preview') === '1'
+  );
+  const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [profileName, setProfileName] = useState('');
   const [role, setRole] = useState<Role>('MEMBER');
   const [page, setPage] = useState<Page>('Overview');
   const [modal, setModal] = useState<Modal>(null);
@@ -55,18 +73,24 @@ function App() {
   const [vote, setVote] = useState<'yes' | 'no' | null>(null);
   const [paymentCode, setPaymentCode] = useState('');
   const [loanAmount, setLoanAmount] = useState('');
+  const [demoPayments, setDemoPayments] = useState<DemoPayment[]>([]);
 
   useEffect(() => {
+    if (previewMode || !supabase) {
+      setAuthLoading(false);
+      return;
+    }
+
     let mounted = true;
 
     supabase.auth.getSession().then(({ data }) => {
       if (!mounted) return;
-      setAuthenticated(Boolean(data.session));
+      setUser(data.session?.user ?? null);
       setAuthLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAuthenticated(Boolean(session));
+      setUser(session?.user ?? null);
       setAuthLoading(false);
     });
 
@@ -74,11 +98,34 @@ function App() {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [previewMode]);
 
-  const roleTitle: Record<Role, string> = {
-    MEMBER: 'Member', ACCOUNTANT: 'Accountant', CHAIRMAN: 'Chairman', SYSTEM_ADMIN: 'System admin',
-  };
+  useEffect(() => {
+    if (!user || !supabase) {
+      setProfileName('');
+      return;
+    }
+
+    let current = true;
+    const metadataName = user.user_metadata.full_name;
+    const fallbackName = typeof metadataName === 'string' && metadataName.trim()
+      ? metadataName.trim()
+      : user.email?.split('@')[0] || 'Pulse member';
+    setProfileName(fallbackName);
+
+    supabase
+      .from('profiles')
+      .select('full_name')
+      .eq('id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (current && data?.full_name?.trim()) setProfileName(data.full_name.trim());
+      });
+
+    return () => {
+      current = false;
+    };
+  }, [user]);
 
   function flash(message: string) {
     setNotice(message);
@@ -87,10 +134,32 @@ function App() {
 
   function submitPayment(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!paymentCode.trim()) return;
+    const amount = Number(event.currentTarget.querySelector<HTMLInputElement>('#payment-amount')?.value);
+    const phone = event.currentTarget.querySelector<HTMLInputElement>('#payment-sender')?.value.trim() ?? '';
+    if (!paymentCode.trim() || !Number.isFinite(amount) || amount <= 0 || !phone) return;
+
+    const member = profileName || user?.email?.split('@')[0] || 'Preview member';
+    setDemoPayments((current) => [{
+      id: `DEMO-${crypto.randomUUID()}`,
+      memberId: user?.id ?? 'preview-user',
+      member,
+      amount,
+      reference: paymentCode.trim(),
+      phone,
+      weekNumber: 38,
+      createdAt: new Date().toISOString(),
+      status: 'PENDING',
+    }, ...current]);
     setModal(null);
     setPaymentCode('');
-    flash('Payment submitted for accountant verification.');
+    flash('Demo payment submitted to the accountant review queue.');
+  }
+
+  function reviewDemoPayment(id: string, status: Exclude<DemoPaymentStatus, 'PENDING'>, rejectionReason?: string) {
+    setDemoPayments((current) => current.map((payment) => payment.id === id
+      ? { ...payment, status, rejectionReason }
+      : payment));
+    flash(`Demo payment ${status.toLowerCase()}.`);
   }
 
   function submitLoan(event: React.FormEvent<HTMLFormElement>) {
@@ -105,9 +174,31 @@ function App() {
     return <main className="auth-shell"><section className="auth-card"><div className="auth-brand"><span className="brand-mark"><Activity size={21} strokeWidth={2.7} /></span><span className="brand-name">pulse<span>.</span></span></div><p className="auth-copy">Checking your secure session...</p></section></main>;
   }
 
-  if (!authenticated) {
+  if (!user && !previewMode) {
     return <LoginScreen />;
   }
+
+  const displayName = profileName || user?.email?.split('@')[0] || 'Preview member';
+  const initials = displayName
+    .split(/\s+/)
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+  const memberTransactions = [
+    ...demoPayments
+      .filter((payment) => payment.memberId === (user?.id ?? 'preview-user'))
+      .map((payment) => ({
+        initials,
+        name: payment.member,
+        detail: `Weekly contribution · Week ${payment.weekNumber}`,
+        amount: `${payment.status === 'VERIFIED' ? '+ ' : ''}${fmt(payment.amount)}`,
+        time: new Date(payment.createdAt).toLocaleString(),
+        status: payment.status === 'VERIFIED' ? 'Verified' : payment.status === 'REJECTED' ? 'Rejected' : 'Pending',
+        tone: payment.status === 'VERIFIED' ? 'green' : 'amber',
+      })),
+    ...transactions,
+  ];
 
   return (
     <div className="app-shell">
@@ -140,7 +231,7 @@ function App() {
 
         <div className="sidebar-bottom">
           <div className="help-card"><span className="help-icon"><CircleHelp size={16} /></span><strong>Need a hand?</strong><span>We’re here to help your group grow.</span><button onClick={() => flash('Help centre opened.')}>Visit help centre <ArrowUpRight size={13} /></button></div>
-          <div className="profile-row"><div className="profile-avatar">AM</div><div className="profile-copy"><strong>Amina Mwangi</strong><span>{roleTitle[role]}</span></div><button className="icon-button profile-more" aria-label="Profile options" onClick={() => flash('Profile options')}><MoreHorizontal size={19} /></button></div>
+          <div className="profile-row"><div className="profile-avatar">{initials}</div><div className="profile-copy"><strong>{displayName}</strong><span>{user?.email ?? 'Preview mode'} · {role}</span></div><button className="icon-button profile-more" aria-label="Profile options" onClick={() => flash('Profile options')}><MoreHorizontal size={19} /></button></div>
         </div>
       </aside>
 
@@ -159,8 +250,9 @@ function App() {
         </header>
 
         <div className="page-content">
+          {previewMode && <section className="role-notice"><CircleHelp size={17} /><span><strong>Demo preview</strong> · dashboard figures are sample data.</span></section>}
           <section className="welcome-row">
-            <div><div className="eyebrow"><span className="eyebrow-line" /> FRIDAY, 25 SEPTEMBER 2026</div><h1>{page !== 'Overview' ? page : role === 'MEMBER' ? 'Good morning, Amina' : role === 'ACCOUNTANT' ? 'Financial approvals' : role === 'CHAIRMAN' ? 'Circle governance' : 'System operations'}</h1><p className="welcome-subtitle">{page !== 'Overview' ? `Your Upendo Circle ${page.toLowerCase()} at a glance.` : role === 'MEMBER' ? 'Here’s what’s happening with your circle today.' : role === 'ACCOUNTANT' ? 'Verify contributions, review disbursements and reconcile circle transactions.' : role === 'CHAIRMAN' ? 'Support members and keep circle governance moving.' : 'Monitor containers, scheduled jobs and the Pulse system.'}</p></div>
+            <div><div className="eyebrow"><span className="eyebrow-line" /> FRIDAY, 25 SEPTEMBER 2026</div><h1>{page !== 'Overview' ? page : role === 'MEMBER' ? `Good morning, ${displayName}` : role === 'ACCOUNTANT' ? 'Financial approvals' : role === 'CHAIRMAN' ? 'Circle governance' : 'System operations'}</h1><p className="welcome-subtitle">{page !== 'Overview' ? `Your Upendo Circle ${page.toLowerCase()} at a glance.` : role === 'MEMBER' ? 'Here’s what’s happening with your circle today.' : role === 'ACCOUNTANT' ? 'Verify contributions, review disbursements and reconcile circle transactions.' : role === 'CHAIRMAN' ? 'Support members and keep circle governance moving.' : 'Monitor containers, scheduled jobs and the Pulse system.'}</p></div>
             <div className="welcome-actions"><button className="button button-quiet" onClick={() => flash(role === 'CHAIRMAN' ? 'Opening active proposals.' : role === 'SYSTEM_ADMIN' ? 'System report is being prepared.' : 'Your monthly report is being prepared.')}><ChartNoAxesColumnIncreasing size={16} /> {role === 'CHAIRMAN' ? 'Proposals' : role === 'SYSTEM_ADMIN' ? 'System report' : 'Reports'}</button>{role === 'MEMBER' ? <button className="button button-primary" onClick={() => setModal('payment')}><Plus size={17} /> Log a payment</button> : role === 'ACCOUNTANT' ? <button className="button button-primary" onClick={() => flash('Financial approval queue refreshed.')}><RotateCcw size={15} /> Refresh queue</button> : role === 'CHAIRMAN' ? <button className="button button-primary" onClick={() => flash('Complaint review opened in demo mode.')}><MessageSquareText size={15} /> Review complaint</button> : <button className="button button-primary" onClick={() => flash('New container setup opened in demo mode.')}><Plus size={17} /> Create container</button>}</div>
           </section>
 
@@ -181,7 +273,7 @@ function App() {
               <div className="panel-heading"><div><div className="section-kicker">YOUR PROGRESS</div><h2>Savings over time</h2></div><button className="period-select" onClick={() => flash('Showing the last 6 months.')}>Last 6 months <ChevronDown size={14} /></button></div>
               <div className="chart-legend"><span><i className="legend-dot savings-legend" /> My savings</span><span><i className="legend-dot reserve-legend" /> Circle reserve</span></div>
               <div className="chart-wrap"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData} margin={{ top: 14, right: 5, left: -20, bottom: 0 }}><defs><linearGradient id="savingsGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#17856c" stopOpacity={0.16} /><stop offset="100%" stopColor="#17856c" stopOpacity={0.01} /></linearGradient><linearGradient id="reserveGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#e7a75e" stopOpacity={0.12} /><stop offset="100%" stopColor="#e7a75e" stopOpacity={0.01} /></linearGradient></defs><CartesianGrid vertical={false} stroke="#edf0e9" strokeDasharray="3 5" /><XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fill: '#929890', fontSize: 11 }} dy={10} /><YAxis tickLine={false} axisLine={false} tick={{ fill: '#929890', fontSize: 10 }} tickFormatter={(value: number) => `${value / 1000}k`} /><Tooltip formatter={(value) => fmt(Number(value))} contentStyle={{ border: '1px solid #e8ebe4', borderRadius: 6, fontSize: 12, fontFamily: 'DM Sans' }} /><Area type="monotone" dataKey="savings" stroke="#18866d" strokeWidth={2.3} fill="url(#savingsGradient)" /><Area type="monotone" dataKey="reserve" stroke="#e4a45b" strokeWidth={2} fill="url(#reserveGradient)" /></AreaChart></ResponsiveContainer></div>
-              <div className="chart-foot"><span>Steady progress, Amina.</span><strong><ArrowUpRight size={14} /> Your savings grew by KES 1,200 this month</strong></div>
+              <div className="chart-foot"><span>Steady progress, {displayName}.</span><strong><ArrowUpRight size={14} /> Your savings grew by KES 1,200 this month</strong></div>
             </section>
 
             <section className="panel contribution-panel">
@@ -194,7 +286,7 @@ function App() {
           </div>
 
           <div className="lower-grid">
-            <section className="panel transactions-panel"><div className="panel-heading"><div><div className="section-kicker">RECENT ACTIVITY</div><h2>Latest transactions</h2></div><button className="text-link" onClick={() => setPage('Activity')}>View all <ArrowUpRight size={14} /></button></div><div className="transaction-list">{transactions.map((item) => <div className="transaction-row" key={`${item.name}-${item.detail}`}><div className={`transaction-avatar avatar-${item.tone}`}>{item.initials}</div><div className="transaction-description"><strong>{item.name}</strong><span>{item.detail}</span></div><div className="transaction-result"><strong className={item.amount.startsWith('+') ? 'amount-in' : 'amount-out'}>{item.amount}</strong><span>{item.time}</span></div><span className={`table-status status-${item.tone}`}>{item.status}</span></div>)}</div><div className="privacy-foot"><ShieldCheck size={14} /> Only you can see your personal transaction history</div></section>
+            <section className="panel transactions-panel"><div className="panel-heading"><div><div className="section-kicker">RECENT ACTIVITY</div><h2>Latest transactions</h2></div><button className="text-link" onClick={() => setPage('Activity')}>View all <ArrowUpRight size={14} /></button></div><div className="transaction-list">{memberTransactions.map((item) => <div className="transaction-row" key={`${item.name}-${item.detail}`}><div className={`transaction-avatar avatar-${item.tone}`}>{item.initials}</div><div className="transaction-description"><strong>{item.name}</strong><span>{item.detail}</span></div><div className="transaction-result"><strong className={item.status === 'Pending' ? '' : item.amount.startsWith('+') ? 'amount-in' : 'amount-out'}>{item.amount}</strong><span>{item.time}</span></div><span className={`table-status status-${item.tone}`}>{item.status}</span></div>)}</div><div className="privacy-foot"><ShieldCheck size={14} /> Only you can see your personal transaction history</div></section>
 
             <div className="right-stack"><section className="panel rotation-panel"><div className="panel-heading"><div><div className="section-kicker">UP NEXT</div><h2>Rotation schedule</h2></div><button className="icon-button small-icon" aria-label="Rotation details" onClick={() => setPage('Rotation')}><ArrowUpRight size={16} /></button></div><div className="next-payout"><div className="next-payout-icon"><ArrowUpRight size={17} /></div><div className="next-payout-copy"><span>Next payout · Week 39</span><strong>James Njoroge</strong></div><span className="payout-amount">KES 5,600</span></div><div className="rotation-foot"><span><Users size={14} /> 8 members</span><span><Check size={14} /> Order confirmed</span></div><button className="rotation-link" onClick={() => setPage('Rotation')}>See full schedule <ChevronRight size={14} /></button></section>
 
@@ -202,7 +294,7 @@ function App() {
           </div>
 
           <footer className="page-footer"><span>Pulse <b>·</b> Community finance, together.</span><span><ShieldCheck size={13} /> Your circle. Your information stays private.</span><button onClick={() => flash('Pulse privacy and security settings.')}>Privacy &amp; security</button></footer>
-          </> : role === 'ACCOUNTANT' ? <AccountantDashboard onNotify={flash} /> : role === 'CHAIRMAN' ? <ChairmanDashboard onNotify={flash} /> : <AdminDashboard onNotify={flash} />}
+          </> : role === 'ACCOUNTANT' ? <AccountantDashboard payments={demoPayments} onReviewPayment={reviewDemoPayment} onNotify={flash} /> : role === 'CHAIRMAN' ? <ChairmanDashboard onNotify={flash} /> : <AdminDashboard onNotify={flash} />}
         </div>
       </main>
 
@@ -216,12 +308,17 @@ function App() {
 function LoginScreen() {
   const [step, setStep] = useState<'email' | 'otp'>('email');
   const [email, setEmail] = useState('');
+  const [fullName, setFullName] = useState('');
   const [otp, setOtp] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   async function requestCode(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!supabase) {
+      setError('Supabase is not configured. Add the project URL and anon key to .env.local.');
+      return;
+    }
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
       setError('Enter a valid email address to continue.');
       return;
@@ -230,7 +327,10 @@ function LoginScreen() {
     setSubmitting(true);
     const { error: requestError } = await supabase.auth.signInWithOtp({
       email: email.trim().toLowerCase(),
-      options: { shouldCreateUser: true },
+      options: {
+        shouldCreateUser: true,
+        ...(fullName.trim() ? { data: { full_name: fullName.trim() } } : {}),
+      },
     });
     setSubmitting(false);
     if (requestError) {
@@ -242,6 +342,10 @@ function LoginScreen() {
 
   async function verifyCode(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!supabase) {
+      setError('Supabase is not configured. Add the project URL and anon key to .env.local.');
+      return;
+    }
     if (!/^\d{6}$/.test(otp)) {
       setError('Enter the 6-digit verification code.');
       return;
@@ -263,9 +367,11 @@ function LoginScreen() {
         <div className="auth-brand"><span className="brand-mark"><Activity size={21} strokeWidth={2.7} /></span><span className="brand-name">pulse<span>.</span></span></div>
         <div className="auth-kicker">UPENDO CIRCLE</div>
         {step === 'email' ? <>
-          <h1 id="auth-title">Welcome back</h1>
-          <p className="auth-copy">Sign in to view your savings, contributions, and circle activity.</p>
+          <h1 id="auth-title">Sign in or join</h1>
+          <p className="auth-copy">Enter your email to get a one-time code. First-time users can add their name; returning users can leave it blank.</p>
           <form className="auth-form" onSubmit={requestCode}>
+            <label htmlFor="full-name">Full name (first-time users)</label>
+            <input id="full-name" type="text" value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Your name" autoComplete="name" />
             <label htmlFor="email">Email address</label>
             <input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" autoFocus />
             {error && <p className="auth-error" role="alert">{error}</p>}
@@ -289,40 +395,59 @@ function LoginScreen() {
   );
 }
 
-function AccountantDashboard({ onNotify }: { onNotify: (message: string) => void }) {
+function AccountantDashboard({ payments, onReviewPayment, onNotify }: {
+  payments: DemoPayment[];
+  onReviewPayment: (id: string, status: Exclude<DemoPaymentStatus, 'PENDING'>, reason?: string) => void;
+  onNotify: (message: string) => void;
+}) {
   const [reviewed, setReviewed] = useState<Record<string, string>>({});
-  const pending = [
+  const submittedPayments = payments.map((payment) => ({
+    id: payment.id,
+    member: payment.member,
+    type: `Weekly contribution · Week ${payment.weekNumber}`,
+    reference: payment.reference,
+    amount: payment.amount,
+    date: new Date(payment.createdAt).toLocaleString(),
+    icon: CreditCard,
+    reviewStatus: payment.status === 'VERIFIED' ? 'Approved' : payment.status === 'REJECTED' ? 'Rejected' : undefined,
+  }));
+  const samplePayments = [
     { id: 'MP-038-AM', member: 'Amina Mwangi', type: 'Weekly contribution · Week 38', reference: 'QJK4M8P2XA', amount: 1000, date: 'Today, 10:42 am', icon: CreditCard },
     { id: 'LN-014-DO', member: 'David Otieno', type: 'Loan disbursement · 14-day term', reference: 'Loan request #014', amount: 8000, date: 'Today, 9:18 am', icon: HandCoins },
     { id: 'RT-006-JN', member: 'James Njoroge', type: 'Rotation payout · Cycle 1', reference: 'Week 39 · Order confirmed', amount: 5600, date: 'Yesterday, 3:18 pm', icon: RotateCcw },
-  ];
+  ].map((item) => ({ ...item, reviewStatus: undefined as string | undefined }));
+  const pending = [...submittedPayments, ...samplePayments];
 
   function decide(id: string, result: 'Approved' | 'Rejected') {
+    let rejectionReason: string | undefined;
     if (result === 'Rejected') {
       const reason = window.prompt('Enter a reason for rejecting this financial record:');
       if (!reason?.trim()) {
         onNotify('A recorded reason is required to reject a financial record.');
         return;
       }
+      rejectionReason = reason.trim();
     }
+    const payment = payments.find((item) => item.id === id);
+    if (payment) onReviewPayment(id, result === 'Approved' ? 'VERIFIED' : 'REJECTED', rejectionReason);
     setReviewed((current) => ({ ...current, [id]: result }));
     onNotify(`${id} ${result.toLowerCase()}.`);
   }
 
   return <>
     <section className="metrics-grid operator-metrics" aria-label="Accountant summary">
-      <OperatorMetric label="PENDING REVIEWS" value="3" detail="Across 2 workflows" icon={Clock3} tone="amber" />
+      <OperatorMetric label="PENDING REVIEWS" value={String(pending.filter((item) => !reviewed[item.id] && !item.reviewStatus).length)} detail="Across 2 workflows" icon={Clock3} tone="amber" />
       <OperatorMetric label="VERIFIED THIS WEEK" value="24" detail="Contribution records" icon={CheckCircle2} tone="green" />
       <OperatorMetric label="AWAITING PAYOUT" value={fmt(13600)} detail="Loan + rotation requests" icon={HandCoins} tone="blue" />
       <OperatorMetric label="RECONCILIATION" value="On track" detail="Last checked today" icon={ShieldCheck} tone="teal" />
     </section>
     <div className="operator-layout">
       <section className="panel operator-panel">
-        <div className="panel-heading"><div><div className="section-kicker">ACTION REQUIRED</div><h2>Financial approval queue</h2></div><span className="status-pill status-due"><span /> {pending.filter((item) => !reviewed[item.id]).length} pending</span></div>
+        <div className="panel-heading"><div><div className="section-kicker">ACTION REQUIRED</div><h2>Financial approval queue</h2></div><span className="status-pill status-due"><span /> {pending.filter((item) => !reviewed[item.id] && !item.reviewStatus).length} pending</span></div>
         <p className="operator-intro">Verify payment details against the M-Pesa record. Approve disbursements only after checking the supporting details.</p>
         <div className="approval-list">{pending.map((item) => {
           const Icon = item.icon;
-          const decision = reviewed[item.id];
+          const decision = reviewed[item.id] ?? item.reviewStatus;
           return <article className="approval-item" key={item.id}>
             <span className="approval-icon"><Icon size={17} /></span>
             <div className="approval-main"><div className="approval-title"><strong>{item.member}</strong><span>{item.type}</span></div><div className="approval-meta"><span>Ref: {item.reference}</span><span>{item.date}</span></div></div>
