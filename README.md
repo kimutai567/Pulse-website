@@ -96,5 +96,6 @@ Potential next steps for turning the prototype into a production product include
 ## Supabase setup
 
 1. Copy `.env.example` to `.env.local` and add the Supabase project URL and publishable key.
-2. Run `supabase/migrations/001_initial_schema.sql` in the Supabase SQL Editor.
-3. Enable Email authentication and configure the email template to include `{{ .Token }}` for OTP login.
+2. Run `supabase/migrations/001_initial_schema.sql`, `002_invites_and_bootstrap.sql`, and `003_accept_circle_invites.sql` in the Supabase SQL Editor, in order.
+3. Enable Email authentication. Configure the Magic Link email template to include `{{ .ConfirmationURL }}` as the invitation/sign-in link and `{{ .Token }}` as a code alternative. Add the app origin (for example, `http://localhost:5173`) to Supabase's allowed redirect URLs.
+4. The first person to sign in becomes the Upendo Circle System Admin. From the admin dashboard, choose **Invite member**, enter the member's email, and assign Member, Accountant, Chairman, or System Admin. Pulse saves the role before asking Supabase Auth to email the sign-in link; after the invitee signs in, that role is applied automatically. The optional name is used for their profile.

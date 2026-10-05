@@ -3,7 +3,7 @@ import {
   Activity, ArrowDownLeft, ArrowUpRight, BadgeCheck, Bell, CalendarDays,
   ChartNoAxesColumnIncreasing, Check, CheckCircle2, ChevronDown, ChevronRight,
   CircleHelp, Clock3, Coins, CreditCard, FileClock, Gavel,
-  HandCoins, HeartHandshake, Home, Landmark, Menu, MessageSquareText,
+  HandCoins, HeartHandshake, Home, Landmark, LogOut, Menu, MessageSquareText,
   MoreHorizontal, Plus, RotateCcw, Settings, ShieldCheck, Users,
   Vote, Wallet, X,
 } from 'lucide-react';
@@ -15,7 +15,7 @@ import { supabase } from './lib/supabase';
 
 type Role = 'MEMBER' | 'ACCOUNTANT' | 'CHAIRMAN' | 'SYSTEM_ADMIN';
 type Page = 'Overview' | 'Contributions' | 'Rotation' | 'Loans' | 'Reserve & dividends' | 'Votes & proposals' | 'Activity';
-type Modal = 'payment' | 'loan' | null;
+type Modal = 'payment' | 'loan' | 'invite' | null;
 type DemoPaymentStatus = 'PENDING' | 'VERIFIED' | 'REJECTED';
 type DemoPayment = {
   id: string;
@@ -60,12 +60,13 @@ const fmt = (amount: number) => `KES ${amount.toLocaleString('en-KE')}`;
 
 function App() {
   const previewMode = import.meta.env.DEV && (
-    !supabase || new URLSearchParams(window.location.search).get('preview') === '1'
+    new URLSearchParams(window.location.search).get('preview') === '1'
   );
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [profileName, setProfileName] = useState('');
   const [role, setRole] = useState<Role>('MEMBER');
+  const [previewRole, setPreviewRole] = useState<Role | null>(null);
   const [page, setPage] = useState<Page>('Overview');
   const [modal, setModal] = useState<Modal>(null);
   const [notice, setNotice] = useState('');
@@ -74,6 +75,51 @@ function App() {
   const [paymentCode, setPaymentCode] = useState('');
   const [loanAmount, setLoanAmount] = useState('');
   const [demoPayments, setDemoPayments] = useState<DemoPayment[]>([]);
+  const [membership, setMembership] = useState<'loading' | 'none' | 'active'>('loading');
+  const [membershipError, setMembershipError] = useState('');
+  const [circleId, setCircleId] = useState<string | null>(null);
+  const viewRole = previewMode ? role : previewRole ?? role;
+  const canPreviewRoles = previewMode || (!previewMode && role === 'SYSTEM_ADMIN');
+
+  useEffect(() => {
+    if (previewMode || !user || !supabase) return;
+
+    let current = true;
+    setMembership('loading');
+    setMembershipError('');
+    setCircleId(null);
+    void (async () => {
+      try {
+        const { error: inviteError } = await supabase.rpc('accept_circle_invites');
+        if (inviteError) throw new Error(inviteError.message);
+
+        const { data, error } = await supabase
+          .from('circle_members')
+          .select('circle_id, role')
+          .eq('user_id', user.id)
+          .limit(1)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        if (!current) return;
+
+        if (data) {
+          setCircleId(data.circle_id);
+          setRole(data.role as Role);
+          setMembership('active');
+        } else {
+          setMembership('none');
+        }
+      } catch (loadError) {
+        if (!current) return;
+        setMembershipError(loadError instanceof Error ? loadError.message : 'Could not load your circle membership.');
+        setMembership('none');
+      }
+    })();
+
+    return () => {
+      current = false;
+    };
+  }, [user, previewMode]);
 
   useEffect(() => {
     if (previewMode || !supabase) {
@@ -170,12 +216,65 @@ function App() {
     flash('Loan request submitted for review.');
   }
 
+  async function sendInvite(email: string, fullName: string, invitedRole: Role) {
+    if (!supabase || !user || !circleId) {
+      throw new Error('Your circle admin session is not ready. Refresh the page and try again.');
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const { error: inviteError } = await supabase
+      .from('circle_invites')
+      .upsert({
+        circle_id: circleId,
+        email: normalizedEmail,
+        role: invitedRole,
+        invited_by: user.id,
+      }, { onConflict: 'circle_id,email' });
+
+    if (inviteError) {
+      throw new Error(`Could not save this role assignment: ${inviteError.message}`);
+    }
+
+    const { error: emailError } = await supabase.auth.signInWithOtp({
+      email: normalizedEmail,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: window.location.origin,
+        ...(fullName.trim() ? { data: { full_name: fullName.trim() } } : {}),
+      },
+    });
+
+    if (emailError) {
+      throw new Error(`The role assignment was saved, but the invitation email could not be sent: ${emailError.message}`);
+    }
+  }
+
   if (authLoading) {
     return <main className="auth-shell"><section className="auth-card"><div className="auth-brand"><span className="brand-mark"><Activity size={21} strokeWidth={2.7} /></span><span className="brand-name">pulse<span>.</span></span></div><p className="auth-copy">Checking your secure session...</p></section></main>;
   }
 
   if (!user && !previewMode) {
     return <LoginScreen />;
+  }
+
+  if (!previewMode && membership !== 'active') {
+    const brand = <div className="auth-brand"><span className="brand-mark"><Activity size={21} strokeWidth={2.7} /></span><span className="brand-name">pulse<span>.</span></span></div>;
+    if (membership === 'loading') {
+      return <main className="auth-shell"><section className="auth-card">{brand}<p className="auth-copy">Loading your circle...</p></section></main>;
+    }
+    return (
+      <main className="auth-shell">
+        <section className="auth-card">
+          {brand}
+          <div className="auth-kicker">UPENDO CIRCLE</div>
+          <h1 id="auth-title">Waiting for approval</h1>
+          <p className="auth-copy">
+            {membershipError || <>You're signed in as <strong>{user?.email}</strong>, but this email hasn't been added to Upendo Circle yet. Ask the circle admin to invite you, then sign in again.</>}
+          </p>
+          <button className="button button-primary auth-submit" type="button" onClick={() => supabase?.auth.signOut()}>Sign out</button>
+        </section>
+      </main>
+    );
   }
 
   const displayName = profileName || user?.email?.split('@')[0] || 'Preview member';
@@ -231,7 +330,7 @@ function App() {
 
         <div className="sidebar-bottom">
           <div className="help-card"><span className="help-icon"><CircleHelp size={16} /></span><strong>Need a hand?</strong><span>We’re here to help your group grow.</span><button onClick={() => flash('Help centre opened.')}>Visit help centre <ArrowUpRight size={13} /></button></div>
-          <div className="profile-row"><div className="profile-avatar">{initials}</div><div className="profile-copy"><strong>{displayName}</strong><span>{user?.email ?? 'Preview mode'} · {role}</span></div><button className="icon-button profile-more" aria-label="Profile options" onClick={() => flash('Profile options')}><MoreHorizontal size={19} /></button></div>
+          <div className="profile-row"><div className="profile-avatar">{initials}</div><div className="profile-copy"><strong>{displayName}</strong><span>{user?.email ?? 'Preview mode'} · {role}</span></div><button className="icon-button profile-more" aria-label={previewMode ? 'Profile options' : 'Sign out'} title={previewMode ? 'Profile options' : 'Sign out'} onClick={() => previewMode ? flash('Profile options') : supabase?.auth.signOut()}>{previewMode ? <MoreHorizontal size={19} /> : <LogOut size={18} />}</button></div>
         </div>
       </aside>
 
@@ -242,7 +341,7 @@ function App() {
           <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setSidebarOpen(true)}><Menu size={19} /></button>
           <div className="breadcrumb"><span>Upendo Circle</span><ChevronRight size={14} /><strong>{page}</strong></div>
           <div className="topbar-actions">
-            <label className="role-picker"><span>VIEW AS</span><select value={role} onChange={(event) => { setRole(event.target.value as Role); setPage('Overview'); }} aria-label="Select dashboard role"><option value="MEMBER">Member</option><option value="ACCOUNTANT">Accountant</option><option value="CHAIRMAN">Chairman</option><option value="SYSTEM_ADMIN">System admin</option></select><ChevronDown size={14} /></label>
+            {canPreviewRoles && <label className="role-picker"><span>{previewMode ? 'DEMO VIEW' : 'PREVIEW AS'}</span><select value={viewRole} onChange={(event) => { const selectedRole = event.target.value as Role; if (previewMode) setRole(selectedRole); else setPreviewRole(selectedRole === role ? null : selectedRole); setPage('Overview'); }} aria-label="Preview dashboard role"><option value="MEMBER">Member</option><option value="ACCOUNTANT">Accountant</option><option value="CHAIRMAN">Chairman</option><option value="SYSTEM_ADMIN">System admin</option></select><ChevronDown size={14} /></label>}
             <span className="topbar-divider" />
             <span className="today-label"><CalendarDays size={15} /> Fri, 25 Sep 2026</span>
             <button className="icon-button top-notification" aria-label="Notifications" onClick={() => flash('You’re all caught up on important updates.')}><Bell size={18} /><i /></button>
@@ -251,16 +350,17 @@ function App() {
 
         <div className="page-content">
           {previewMode && <section className="role-notice"><CircleHelp size={17} /><span><strong>Demo preview</strong> · dashboard figures are sample data.</span></section>}
+          {!previewMode && previewRole && <section className="role-notice"><CircleHelp size={17} /><span><strong>Previewing {viewRole.replace('_', ' ')} screen</strong> · You remain signed in as System Admin; screen data is sample data and your permissions have not changed.</span><button onClick={() => setPreviewRole(null)}>Return to admin</button></section>}
           <section className="welcome-row">
-            <div><div className="eyebrow"><span className="eyebrow-line" /> FRIDAY, 25 SEPTEMBER 2026</div><h1>{page !== 'Overview' ? page : role === 'MEMBER' ? `Good morning, ${displayName}` : role === 'ACCOUNTANT' ? 'Financial approvals' : role === 'CHAIRMAN' ? 'Circle governance' : 'System operations'}</h1><p className="welcome-subtitle">{page !== 'Overview' ? `Your Upendo Circle ${page.toLowerCase()} at a glance.` : role === 'MEMBER' ? 'Here’s what’s happening with your circle today.' : role === 'ACCOUNTANT' ? 'Verify contributions, review disbursements and reconcile circle transactions.' : role === 'CHAIRMAN' ? 'Support members and keep circle governance moving.' : 'Monitor containers, scheduled jobs and the Pulse system.'}</p></div>
-            <div className="welcome-actions"><button className="button button-quiet" onClick={() => flash(role === 'CHAIRMAN' ? 'Opening active proposals.' : role === 'SYSTEM_ADMIN' ? 'System report is being prepared.' : 'Your monthly report is being prepared.')}><ChartNoAxesColumnIncreasing size={16} /> {role === 'CHAIRMAN' ? 'Proposals' : role === 'SYSTEM_ADMIN' ? 'System report' : 'Reports'}</button>{role === 'MEMBER' ? <button className="button button-primary" onClick={() => setModal('payment')}><Plus size={17} /> Log a payment</button> : role === 'ACCOUNTANT' ? <button className="button button-primary" onClick={() => flash('Financial approval queue refreshed.')}><RotateCcw size={15} /> Refresh queue</button> : role === 'CHAIRMAN' ? <button className="button button-primary" onClick={() => flash('Complaint review opened in demo mode.')}><MessageSquareText size={15} /> Review complaint</button> : <button className="button button-primary" onClick={() => flash('New container setup opened in demo mode.')}><Plus size={17} /> Create container</button>}</div>
+            <div><div className="eyebrow"><span className="eyebrow-line" /> FRIDAY, 25 SEPTEMBER 2026</div><h1>{page !== 'Overview' ? page : viewRole === 'MEMBER' ? `Good morning, ${displayName}` : viewRole === 'ACCOUNTANT' ? 'Financial approvals' : viewRole === 'CHAIRMAN' ? 'Circle governance' : 'System operations'}</h1><p className="welcome-subtitle">{page !== 'Overview' ? `Your Upendo Circle ${page.toLowerCase()} at a glance.` : viewRole === 'MEMBER' ? 'Here’s what’s happening with your circle today.' : viewRole === 'ACCOUNTANT' ? 'Verify contributions, review disbursements and reconcile circle transactions.' : viewRole === 'CHAIRMAN' ? 'Support members and keep circle governance moving.' : 'Monitor containers, scheduled jobs and the Pulse system.'}</p></div>
+            <div className="welcome-actions"><button className="button button-quiet" onClick={() => flash(viewRole === 'CHAIRMAN' ? 'Opening active proposals.' : viewRole === 'SYSTEM_ADMIN' ? 'System report is being prepared.' : 'Your monthly report is being prepared.')}><ChartNoAxesColumnIncreasing size={16} /> {viewRole === 'CHAIRMAN' ? 'Proposals' : viewRole === 'SYSTEM_ADMIN' ? 'System report' : 'Reports'}</button>{viewRole === 'MEMBER' ? <button className="button button-primary" onClick={() => setModal('payment')}><Plus size={17} /> Log a payment</button> : viewRole === 'ACCOUNTANT' ? <button className="button button-primary" onClick={() => flash('Financial approval queue refreshed.')}><RotateCcw size={15} /> Refresh queue</button> : viewRole === 'CHAIRMAN' ? <button className="button button-primary" onClick={() => flash('Complaint review opened in demo mode.')}><MessageSquareText size={15} /> Review complaint</button> : <button className="button button-primary" onClick={() => flash('New container setup opened in demo mode.')}><Plus size={17} /> Create container</button>}</div>
           </section>
 
-          {role === 'ACCOUNTANT' && <section className="role-notice"><ShieldCheck size={17} /><span><strong>Accountant workspace</strong> · 3 items need your review</span><button onClick={() => setPage('Contributions')}>Review queue <ArrowRightIcon /></button></section>}
-          {role === 'CHAIRMAN' && <section className="role-notice chairman-notice"><MessageSquareText size={17} /><span><strong>Chairman workspace</strong> · 1 complaint needs attention</span><button onClick={() => flash('Complaint review opened in demo mode.')}>Open complaint <ArrowRightIcon /></button></section>}
-          {role === 'SYSTEM_ADMIN' && <section className="role-notice admin-notice"><ShieldCheck size={17} /><span><strong>System admin overview</strong> · Container health is looking good</span><button onClick={() => flash('Admin system health: operational (demo).')}>System health <ArrowRightIcon /></button></section>}
+          {viewRole === 'ACCOUNTANT' && <section className="role-notice"><ShieldCheck size={17} /><span><strong>Accountant workspace</strong> · 3 items need your review</span><button onClick={() => setPage('Contributions')}>Review queue <ArrowRightIcon /></button></section>}
+          {viewRole === 'CHAIRMAN' && <section className="role-notice chairman-notice"><MessageSquareText size={17} /><span><strong>Chairman workspace</strong> · 1 complaint needs attention</span><button onClick={() => flash('Complaint review opened in demo mode.')}>Open complaint <ArrowRightIcon /></button></section>}
+          {viewRole === 'SYSTEM_ADMIN' && <section className="role-notice admin-notice"><ShieldCheck size={17} /><span><strong>System admin overview</strong> · Container health is looking good</span><button onClick={() => flash('Admin system health: operational (demo).')}>System health <ArrowRightIcon /></button></section>}
 
-          {role === 'MEMBER' ? <>
+          {viewRole === 'MEMBER' ? <>
           <section className="metrics-grid" aria-label="Circle summary">
             <article className="metric-card metric-savings"><div className="metric-heading"><span>MY SAVINGS</span><span className="metric-icon green-icon"><Wallet size={16} /></span></div><div className="metric-value">KES 24,800</div><div className="metric-foot"><span className="positive-change"><ArrowUpRight size={14} /> 8.2%</span><span>vs. last month</span><button aria-label="Savings details" onClick={() => setPage('Activity')}><ArrowUpRight size={15} /></button></div><span className="metric-spark spark-green" /></article>
             <article className="metric-card"><div className="metric-heading"><span>CONTRIBUTED THIS CYCLE</span><span className="metric-icon blue-icon"><Coins size={16} /></span></div><div className="metric-value">KES 4,000</div><div className="metric-foot"><span className="foot-dot green-dot" />4 of 4 weeks complete<button aria-label="Contribution details" onClick={() => setPage('Contributions')}><ArrowUpRight size={15} /></button></div><span className="metric-spark spark-blue" /></article>
@@ -294,11 +394,11 @@ function App() {
           </div>
 
           <footer className="page-footer"><span>Pulse <b>·</b> Community finance, together.</span><span><ShieldCheck size={13} /> Your circle. Your information stays private.</span><button onClick={() => flash('Pulse privacy and security settings.')}>Privacy &amp; security</button></footer>
-          </> : role === 'ACCOUNTANT' ? <AccountantDashboard payments={demoPayments} onReviewPayment={reviewDemoPayment} onNotify={flash} /> : role === 'CHAIRMAN' ? <ChairmanDashboard onNotify={flash} /> : <AdminDashboard onNotify={flash} />}
+          </> : viewRole === 'ACCOUNTANT' ? <AccountantDashboard payments={demoPayments} onReviewPayment={reviewDemoPayment} onNotify={flash} /> : viewRole === 'CHAIRMAN' ? <ChairmanDashboard onNotify={flash} /> : <AdminDashboard onNotify={flash} onInvite={() => role === 'SYSTEM_ADMIN' && !previewRole && !previewMode ? setModal('invite') : flash('Admin actions are unavailable in a role preview.')} />}
         </div>
       </main>
 
-      {modal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setModal(null); }}><section className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-heading"><span className="modal-icon">{modal === 'payment' ? <ArrowDownLeft size={19} /> : <HeartHandshake size={19} />}</span><button className="icon-button" aria-label="Close dialog" onClick={() => setModal(null)}><X size={19} /></button></div><div className="section-kicker">{modal === 'payment' ? 'WEEKLY CONTRIBUTION · WEEK 38' : 'UPENDO CIRCLE · MEMBER LOAN'}</div><h2 id="modal-title">{modal === 'payment' ? 'Record a payment' : 'Request a loan'}</h2><p className="modal-description">{modal === 'payment' ? 'Submit your M-Pesa details. Your accountant will verify the payment before it is added to your circle records.' : 'Your self-guaranteed borrowing limit is KES 12,400. Final eligibility is confirmed during review.'}</p><form onSubmit={modal === 'payment' ? submitPayment : submitLoan}>{modal === 'payment' ? <><label className="form-label" htmlFor="payment-amount">Amount paid</label><div className="input-with-prefix"><span>KES</span><input id="payment-amount" type="number" min="1" defaultValue="1000" required /></div><label className="form-label" htmlFor="payment-code">M-Pesa transaction code</label><input className="form-input" id="payment-code" value={paymentCode} onChange={(event) => setPaymentCode(event.target.value.toUpperCase())} placeholder="e.g. QJK4M8P2XA" maxLength={12} required /><label className="form-label" htmlFor="payment-sender">Sender phone number</label><input className="form-input" id="payment-sender" type="tel" placeholder="+254 7XX XXX XXX" required /><div className="form-safe-note"><ShieldCheck size={15} /> Only authorized accountants can review your payment reference.</div></> : <><label className="form-label" htmlFor="loan-amount">Amount requested</label><div className="input-with-prefix"><span>KES</span><input id="loan-amount" type="number" min="500" max="12400" step="100" value={loanAmount} onChange={(event) => setLoanAmount(event.target.value)} placeholder="e.g. 5,000" required /></div><label className="form-label" htmlFor="loan-purpose">Purpose</label><select id="loan-purpose" className="form-input" defaultValue=""><option value="" disabled>Select a purpose</option><option>Education</option><option>Medical</option><option>Business</option><option>Home & family</option><option>Other</option></select><div className="loan-term-box"><span>Standard terms</span><strong>10% flat interest · 14 days + 7-day grace</strong></div></>}<div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setModal(null)}>Cancel</button><button className="button button-primary" type="submit">{modal === 'payment' ? 'Submit for review' : 'Continue request'} <ChevronRight size={16} /></button></div><p className="demo-disclaimer">Demo only. No real money or transactions are processed.</p></form></section></div>}
+      {modal === 'invite' ? <InviteModal onClose={() => setModal(null)} onSend={sendInvite} /> : modal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setModal(null); }}><section className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-heading"><span className="modal-icon">{modal === 'payment' ? <ArrowDownLeft size={19} /> : <HeartHandshake size={19} />}</span><button className="icon-button" aria-label="Close dialog" onClick={() => setModal(null)}><X size={19} /></button></div><div className="section-kicker">{modal === 'payment' ? 'WEEKLY CONTRIBUTION · WEEK 38' : 'UPENDO CIRCLE · MEMBER LOAN'}</div><h2 id="modal-title">{modal === 'payment' ? 'Record a payment' : 'Request a loan'}</h2><p className="modal-description">{modal === 'payment' ? 'Submit your M-Pesa details. Your accountant will verify the payment before it is added to your circle records.' : 'Your self-guaranteed borrowing limit is KES 12,400. Final eligibility is confirmed during review.'}</p><form onSubmit={modal === 'payment' ? submitPayment : submitLoan}>{modal === 'payment' ? <><label className="form-label" htmlFor="payment-amount">Amount paid</label><div className="input-with-prefix"><span>KES</span><input id="payment-amount" type="number" min="1" defaultValue="1000" required /></div><label className="form-label" htmlFor="payment-code">M-Pesa transaction code</label><input className="form-input" id="payment-code" value={paymentCode} onChange={(event) => setPaymentCode(event.target.value.toUpperCase())} placeholder="e.g. QJK4M8P2XA" maxLength={12} required /><label className="form-label" htmlFor="payment-sender">Sender phone number</label><input className="form-input" id="payment-sender" type="tel" placeholder="+254 7XX XXX XXX" required /><div className="form-safe-note"><ShieldCheck size={15} /> Only authorized accountants can review your payment reference.</div></> : <><label className="form-label" htmlFor="loan-amount">Amount requested</label><div className="input-with-prefix"><span>KES</span><input id="loan-amount" type="number" min="500" max="12400" step="100" value={loanAmount} onChange={(event) => setLoanAmount(event.target.value)} placeholder="e.g. 5,000" required /></div><label className="form-label" htmlFor="loan-purpose">Purpose</label><select id="loan-purpose" className="form-input" defaultValue=""><option value="" disabled>Select a purpose</option><option>Education</option><option>Medical</option><option>Business</option><option>Home & family</option><option>Other</option></select><div className="loan-term-box"><span>Standard terms</span><strong>10% flat interest · 14 days + 7-day grace</strong></div></>}<div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setModal(null)}>Cancel</button><button className="button button-primary" type="submit">{modal === 'payment' ? 'Submit for review' : 'Continue request'} <ChevronRight size={16} /></button></div><p className="demo-disclaimer">Demo only. No real money or transactions are processed.</p></form></section></div>}
 
       {notice && <div className="toast" role="status"><BadgeCheck size={17} />{notice}<button aria-label="Dismiss notification" onClick={() => setNotice('')}><X size={15} /></button></div>}
     </div>
@@ -368,9 +468,9 @@ function LoginScreen() {
         <div className="auth-kicker">UPENDO CIRCLE</div>
         {step === 'email' ? <>
           <h1 id="auth-title">Sign in or join</h1>
-          <p className="auth-copy">Enter your email to get a one-time code. First-time users can add their name; returning users can leave it blank.</p>
+          <p className="auth-copy">Enter your email to receive a sign-in link or code. The first person to join becomes the System Admin and can invite members with assigned roles.</p>
           <form className="auth-form" onSubmit={requestCode}>
-            <label htmlFor="full-name">Full name (first-time users)</label>
+          <label htmlFor="full-name">Your name (optional)</label>
             <input id="full-name" type="text" value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Your name" autoComplete="name" />
             <label htmlFor="email">Email address</label>
             <input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" autoFocus />
@@ -381,7 +481,7 @@ function LoginScreen() {
         </> : <>
           <button className="auth-back" type="button" onClick={() => { setStep('email'); setError(''); }}><ArrowDownLeft size={15} /> Change email</button>
           <h1 id="auth-title">Enter your code</h1>
-          <p className="auth-copy">We sent a 6-digit verification code to <strong>{email}</strong>.</p>
+          <p className="auth-copy">We sent a sign-in link and a 6-digit verification code to <strong>{email}</strong>. You can use either.</p>
           <form className="auth-form" onSubmit={verifyCode}>
             <label htmlFor="otp">Verification code</label>
             <input id="otp" className="otp-input" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, ''))} placeholder="000000" autoComplete="one-time-code" autoFocus />
@@ -480,7 +580,68 @@ function ChairmanDashboard({ onNotify }: { onNotify: (message: string) => void }
   </>;
 }
 
-function AdminDashboard({ onNotify }: { onNotify: (message: string) => void }) {
+function InviteModal({ onClose, onSend }: {
+  onClose: () => void;
+  onSend: (email: string, fullName: string, role: Role) => Promise<void>;
+}) {
+  const [email, setEmail] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [role, setRole] = useState<Role>('MEMBER');
+  const [error, setError] = useState('');
+  const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError('');
+    setSending(true);
+    try {
+      await onSend(email, fullName, role);
+      setSent(true);
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : 'The invitation could not be sent. Please try again.');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !sending) onClose(); }}>
+      <section className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="invite-title">
+        <div className="modal-heading">
+          <span className="modal-icon"><Users size={19} /></span>
+          <button className="icon-button" aria-label="Close dialog" onClick={onClose} disabled={sending}><X size={19} /></button>
+        </div>
+        <div className="section-kicker">UPENDO CIRCLE · MEMBER ACCESS</div>
+        <h2 id="invite-title">Invite a member</h2>
+        <p className="modal-description">Choose the role they should have. Their invitation email will link their account to Upendo Circle with that role.</p>
+        <form onSubmit={submit}>
+          <label className="form-label" htmlFor="invite-name">Full name (optional)</label>
+          <input className="form-input" id="invite-name" value={fullName} onChange={(event) => { setFullName(event.target.value); setSent(false); }} placeholder="Member's name" autoComplete="name" />
+          <label className="form-label" htmlFor="invite-email">Email address</label>
+          <input className="form-input" id="invite-email" type="email" value={email} onChange={(event) => { setEmail(event.target.value); setSent(false); }} placeholder="member@example.com" autoComplete="email" required />
+          <label className="form-label" htmlFor="invite-role">Assign role</label>
+          <select className="form-input" id="invite-role" value={role} onChange={(event) => { setRole(event.target.value as Role); setSent(false); }}>
+            <option value="MEMBER">Member</option>
+            <option value="ACCOUNTANT">Accountant</option>
+            <option value="CHAIRMAN">Chairman</option>
+            <option value="SYSTEM_ADMIN">System Admin</option>
+          </select>
+          {error && <p className="auth-error" role="alert">{error}</p>}
+          {sent && <p className="form-safe-note" role="status"><CheckCircle2 size={15} /> Invitation link sent to {email.trim().toLowerCase()} as {role.replace('_', ' ')}.</p>}
+          <div className="modal-actions">
+            <button type="button" className="button button-quiet" onClick={onClose} disabled={sending}>Close</button>
+            <button className="button button-primary" type="submit" disabled={sending || sent}>
+              {sending ? 'Sending invitation...' : sent ? 'Invitation sent' : <>Send invite link <ChevronRight size={16} /></>}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function AdminDashboard({ onNotify, onInvite }: { onNotify: (message: string) => void; onInvite: () => void }) {
   const [retried, setRetried] = useState(false);
   return <>
     <section className="metrics-grid operator-metrics" aria-label="System admin summary">
@@ -489,7 +650,7 @@ function AdminDashboard({ onNotify }: { onNotify: (message: string) => void }) {
       <OperatorMetric label="ADMIN POOL" value={fmt(186400)} detail="System funds · separate" icon={Coins} tone="amber" />
       <OperatorMetric label="PLATFORM HEALTH" value="Operational" detail="All core jobs running" icon={Activity} tone="teal" />
     </section>
-    <div className="admin-action-row"><div><div className="section-kicker">SYSTEM OPERATIONS</div><strong>Manage your Pulse network</strong></div><div><button className="button button-quiet" onClick={() => onNotify('Invitation form opened in demo mode.') }><Plus size={15} /> Invite member</button><button className="button button-primary" onClick={() => onNotify('New container setup opened in demo mode.') }><Plus size={15} /> Create container</button></div></div>
+    <div className="admin-action-row"><div><div className="section-kicker">SYSTEM OPERATIONS</div><strong>Manage your Pulse network</strong></div><div><button className="button button-quiet" onClick={onInvite}><Plus size={15} /> Invite member</button><button className="button button-primary" onClick={() => onNotify('New container setup opened in demo mode.') }><Plus size={15} /> Create container</button></div></div>
     <div className="operator-layout admin-layout">
       <section className="panel operator-panel"><div className="panel-heading"><div><div className="section-kicker">NETWORK OVERVIEW</div><h2>Containers</h2></div><button className="text-link" onClick={() => onNotify('Showing all 12 containers.')}>All containers <ArrowUpRight size={14} /></button></div><div className="container-list"><AdminContainer name="Upendo Circle" members="8 members" state="ACTIVE" reserve="43,200" completion="96%" tone="green" onClick={onNotify} /><AdminContainer name="Jirani Savings Group" members="10 members" state="ACTIVE" reserve="58,600" completion="91%" tone="green" onClick={onNotify} /><AdminContainer name="Mwangaza Women’s Circle" members="6 members" state="FORMING" reserve="—" completion="60%" tone="amber" onClick={onNotify} /><AdminContainer name="Tumaini Chama" members="5 members" state="REVIEW" reserve="28,400" completion="74%" tone="red" onClick={onNotify} /></div><div className="operator-guardrail"><ShieldCheck size={16} /><span>Container balances and histories remain isolated from one another.</span></div></section>
       <div className="admin-side-stack"><section className="panel operator-side-panel"><div className="panel-heading"><div><div className="section-kicker">SCHEDULED OPERATIONS</div><h2>Job monitor</h2></div><span className="health-indicator"><i /> Healthy</span></div><div className="job-row"><span className="job-icon"><CalendarDays size={14} /></span><span><strong>Weekly contribution cycle</strong><small>Last run · Mon, 00:00 EAT</small></span><span className="job-ok"><CheckCircle2 size={15} /></span></div><div className="job-row"><span className="job-icon"><Coins size={14} /></span><span><strong>Grace period & fine check</strong><small>Next run · Today, 19:05 EAT</small></span><span className="job-ok"><CheckCircle2 size={15} /></span></div><div className="job-row"><span className="job-icon"><Bell size={14} /></span><span><strong>Rotation reminders</strong><small>Last run · 08:00 EAT</small></span><span className="job-ok"><CheckCircle2 size={15} /></span></div>{retried && <div className="recommendation-note"><CheckCircle2 size={14} /> Failed job retry queued.</div>}<button className="operator-text-button" onClick={() => { setRetried(true); onNotify('Scheduled job retry queued in this demo.'); }}><RotateCcw size={13} /> Retry failed jobs <ChevronRight size={14} /></button></section>
