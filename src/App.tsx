@@ -65,6 +65,8 @@ function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [profileName, setProfileName] = useState('');
+  const [profilePhone, setProfilePhone] = useState('');
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [role, setRole] = useState<Role>('MEMBER');
   const [previewRole, setPreviewRole] = useState<Role | null>(null);
   const [page, setPage] = useState<Page>('Overview');
@@ -79,7 +81,7 @@ function App() {
   const [membershipError, setMembershipError] = useState('');
   const [circleId, setCircleId] = useState<string | null>(null);
   const viewRole = previewMode ? role : previewRole ?? role;
-  const canPreviewRoles = previewMode || (!previewMode && role === 'SYSTEM_ADMIN');
+  const canPreviewRoles = previewMode || role !== 'MEMBER';
 
   useEffect(() => {
     if (previewMode || !user || !supabase) return;
@@ -133,6 +135,8 @@ function App() {
       if (!mounted) return;
       setUser(data.session?.user ?? null);
       setAuthLoading(false);
+    }).catch(() => {
+      if (mounted) setAuthLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -149,10 +153,13 @@ function App() {
   useEffect(() => {
     if (!user || !supabase) {
       setProfileName('');
+      setProfilePhone('');
+      setProfileLoaded(false);
       return;
     }
 
     let current = true;
+    setProfileLoaded(false);
     const metadataName = user.user_metadata.full_name;
     const fallbackName = typeof metadataName === 'string' && metadataName.trim()
       ? metadataName.trim()
@@ -161,11 +168,14 @@ function App() {
 
     supabase
       .from('profiles')
-      .select('full_name')
+      .select('full_name, phone')
       .eq('id', user.id)
       .maybeSingle()
       .then(({ data }) => {
-        if (current && data?.full_name?.trim()) setProfileName(data.full_name.trim());
+        if (!current) return;
+        if (data?.full_name?.trim()) setProfileName(data.full_name.trim());
+        setProfilePhone(data?.phone?.trim() ?? '');
+        setProfileLoaded(true);
       });
 
     return () => {
@@ -277,6 +287,20 @@ function App() {
     );
   }
 
+  if (!previewMode && user && !profileLoaded) {
+    return <main className="auth-shell"><section className="auth-card"><p className="auth-copy">Loading your profile...</p></section></main>;
+  }
+
+  if (!previewMode && user && !profilePhone) {
+    return <CompleteProfile
+      email={user.email ?? ''}
+      initialName={profileName}
+      onSaved={(name, phone) => { setProfileName(name); setProfilePhone(phone); }}
+      onSignOut={() => supabase?.auth.signOut()}
+      userId={user.id}
+    />;
+  }
+
   const displayName = profileName || user?.email?.split('@')[0] || 'Preview member';
   const initials = displayName
     .split(/\s+/)
@@ -330,7 +354,7 @@ function App() {
 
         <div className="sidebar-bottom">
           <div className="help-card"><span className="help-icon"><CircleHelp size={16} /></span><strong>Need a hand?</strong><span>We’re here to help your group grow.</span><button onClick={() => flash('Help centre opened.')}>Visit help centre <ArrowUpRight size={13} /></button></div>
-          <div className="profile-row"><div className="profile-avatar">{initials}</div><div className="profile-copy"><strong>{displayName}</strong><span>{user?.email ?? 'Preview mode'} · {role}</span></div><button className="icon-button profile-more" aria-label={previewMode ? 'Profile options' : 'Sign out'} title={previewMode ? 'Profile options' : 'Sign out'} onClick={() => previewMode ? flash('Profile options') : supabase?.auth.signOut()}>{previewMode ? <MoreHorizontal size={19} /> : <LogOut size={18} />}</button></div>
+          <div className="profile-row"><div className="profile-avatar">{initials}</div><div className="profile-copy"><strong>{displayName}</strong><span>{user?.email ?? 'Preview mode'}{profilePhone ? ` · ${profilePhone}` : ''} · {role}</span></div><button className="icon-button profile-more" aria-label={previewMode ? 'Profile options' : 'Sign out'} title={previewMode ? 'Profile options' : 'Sign out'} onClick={() => previewMode ? flash('Profile options') : supabase?.auth.signOut()}>{previewMode ? <MoreHorizontal size={19} /> : <LogOut size={18} />}</button></div>
         </div>
       </aside>
 
@@ -341,7 +365,7 @@ function App() {
           <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setSidebarOpen(true)}><Menu size={19} /></button>
           <div className="breadcrumb"><span>Upendo Circle</span><ChevronRight size={14} /><strong>{page}</strong></div>
           <div className="topbar-actions">
-            {canPreviewRoles && <label className="role-picker"><span>{previewMode ? 'DEMO VIEW' : 'PREVIEW AS'}</span><select value={viewRole} onChange={(event) => { const selectedRole = event.target.value as Role; if (previewMode) setRole(selectedRole); else setPreviewRole(selectedRole === role ? null : selectedRole); setPage('Overview'); }} aria-label="Preview dashboard role"><option value="MEMBER">Member</option><option value="ACCOUNTANT">Accountant</option><option value="CHAIRMAN">Chairman</option><option value="SYSTEM_ADMIN">System admin</option></select><ChevronDown size={14} /></label>}
+            {canPreviewRoles && <label className="role-picker"><span>{previewMode ? 'DEMO VIEW' : 'PREVIEW AS'}</span><select value={viewRole} onChange={(event) => { const selectedRole = event.target.value as Role; if (previewMode) setRole(selectedRole); else setPreviewRole(selectedRole === role ? null : selectedRole); setPage('Overview'); }} aria-label="Preview dashboard role"><option value="MEMBER">Member</option>{(previewMode || role === 'SYSTEM_ADMIN' || role === 'ACCOUNTANT') && <option value="ACCOUNTANT">Accountant</option>}{(previewMode || role === 'SYSTEM_ADMIN' || role === 'CHAIRMAN') && <option value="CHAIRMAN">Chairman</option>}{(previewMode || role === 'SYSTEM_ADMIN') && <option value="SYSTEM_ADMIN">System admin</option>}</select><ChevronDown size={14} /></label>}
             <span className="topbar-divider" />
             <span className="today-label"><CalendarDays size={15} /> Fri, 25 Sep 2026</span>
             <button className="icon-button top-notification" aria-label="Notifications" onClick={() => flash('You’re all caught up on important updates.')}><Bell size={18} /><i /></button>
@@ -350,7 +374,7 @@ function App() {
 
         <div className="page-content">
           {previewMode && <section className="role-notice"><CircleHelp size={17} /><span><strong>Demo preview</strong> · dashboard figures are sample data.</span></section>}
-          {!previewMode && previewRole && <section className="role-notice"><CircleHelp size={17} /><span><strong>Previewing {viewRole.replace('_', ' ')} screen</strong> · You remain signed in as System Admin; screen data is sample data and your permissions have not changed.</span><button onClick={() => setPreviewRole(null)}>Return to admin</button></section>}
+          {!previewMode && previewRole && <section className="role-notice"><CircleHelp size={17} /><span><strong>Previewing {viewRole.replace('_', ' ')} screen</strong> · You remain signed in as {role.replace('_', ' ')}; screen data is sample data and your permissions have not changed.</span><button onClick={() => setPreviewRole(null)}>Return to my dashboard</button></section>}
           <section className="welcome-row">
             <div><div className="eyebrow"><span className="eyebrow-line" /> FRIDAY, 25 SEPTEMBER 2026</div><h1>{page !== 'Overview' ? page : viewRole === 'MEMBER' ? `Good morning, ${displayName}` : viewRole === 'ACCOUNTANT' ? 'Financial approvals' : viewRole === 'CHAIRMAN' ? 'Circle governance' : 'System operations'}</h1><p className="welcome-subtitle">{page !== 'Overview' ? `Your Upendo Circle ${page.toLowerCase()} at a glance.` : viewRole === 'MEMBER' ? 'Here’s what’s happening with your circle today.' : viewRole === 'ACCOUNTANT' ? 'Verify contributions, review disbursements and reconcile circle transactions.' : viewRole === 'CHAIRMAN' ? 'Support members and keep circle governance moving.' : 'Monitor containers, scheduled jobs and the Pulse system.'}</p></div>
             <div className="welcome-actions"><button className="button button-quiet" onClick={() => flash(viewRole === 'CHAIRMAN' ? 'Opening active proposals.' : viewRole === 'SYSTEM_ADMIN' ? 'System report is being prepared.' : 'Your monthly report is being prepared.')}><ChartNoAxesColumnIncreasing size={16} /> {viewRole === 'CHAIRMAN' ? 'Proposals' : viewRole === 'SYSTEM_ADMIN' ? 'System report' : 'Reports'}</button>{viewRole === 'MEMBER' ? <button className="button button-primary" onClick={() => setModal('payment')}><Plus size={17} /> Log a payment</button> : viewRole === 'ACCOUNTANT' ? <button className="button button-primary" onClick={() => flash('Financial approval queue refreshed.')}><RotateCcw size={15} /> Refresh queue</button> : viewRole === 'CHAIRMAN' ? <button className="button button-primary" onClick={() => flash('Complaint review opened in demo mode.')}><MessageSquareText size={15} /> Review complaint</button> : <button className="button button-primary" onClick={() => flash('New container setup opened in demo mode.')}><Plus size={17} /> Create container</button>}</div>
@@ -408,13 +432,30 @@ function App() {
 function LoginScreen() {
   const [step, setStep] = useState<'email' | 'otp'>('email');
   const [email, setEmail] = useState('');
-  const [fullName, setFullName] = useState('');
   const [otp, setOtp] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
 
-  async function requestCode(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = window.setTimeout(() => setCooldown((value) => value - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [cooldown]);
+
+  function friendlyAuthError(message: string, status?: number) {
+    if (status === 429 || /rate limit|too many|security purposes/i.test(message)) {
+      return 'Too many emails requested. Wait a few minutes before asking for another code.';
+    }
+    if (/expired|invalid/i.test(message)) {
+      return 'That code is invalid or has expired. Request a new one.';
+    }
+    return message;
+  }
+
+  async function requestCode(event?: React.FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    if (submitting || cooldown > 0) return;
     if (!supabase) {
       setError('Supabase is not configured. Add the project URL and anon key to .env.local.');
       return;
@@ -429,14 +470,15 @@ function LoginScreen() {
       email: email.trim().toLowerCase(),
       options: {
         shouldCreateUser: true,
-        ...(fullName.trim() ? { data: { full_name: fullName.trim() } } : {}),
+        emailRedirectTo: window.location.origin,
       },
     });
     setSubmitting(false);
     if (requestError) {
-      setError(requestError.message);
+      setError(friendlyAuthError(requestError.message, requestError.status));
       return;
     }
+    setCooldown(60);
     setStep('otp');
   }
 
@@ -458,7 +500,7 @@ function LoginScreen() {
       type: 'email',
     });
     setSubmitting(false);
-    if (verificationError) setError(verificationError.message);
+    if (verificationError) setError(friendlyAuthError(verificationError.message, verificationError.status));
   }
 
   return (
@@ -467,17 +509,15 @@ function LoginScreen() {
         <div className="auth-brand"><span className="brand-mark"><Activity size={21} strokeWidth={2.7} /></span><span className="brand-name">pulse<span>.</span></span></div>
         <div className="auth-kicker">UPENDO CIRCLE</div>
         {step === 'email' ? <>
-          <h1 id="auth-title">Sign in or join</h1>
-          <p className="auth-copy">Enter your email to receive a sign-in link or code. The first person to join becomes the System Admin and can invite members with assigned roles.</p>
+          <h1 id="auth-title">Welcome back</h1>
+          <p className="auth-copy">Sign in with the email address your invitation was sent to. We'll email you a secure sign-in link and code. No password needed.</p>
           <form className="auth-form" onSubmit={requestCode}>
-          <label htmlFor="full-name">Your name (optional)</label>
-            <input id="full-name" type="text" value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Your name" autoComplete="name" />
             <label htmlFor="email">Email address</label>
             <input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" autoFocus />
             {error && <p className="auth-error" role="alert">{error}</p>}
-            <button className="button button-primary auth-submit" type="submit" disabled={submitting}>{submitting ? 'Sending code...' : <>Continue <ChevronRight size={16} /></>}</button>
+            <button className="button button-primary auth-submit" type="submit" disabled={submitting}>            {submitting ? 'Sending code...' : <>Email me a sign-in code <ChevronRight size={16} /></>}</button>
           </form>
-          <p className="auth-note"><ShieldCheck size={14} /> Your email is used only to secure your account.</p>
+                      <p className="auth-note"><ShieldCheck size={14} /> Invited by your circle admin? Use the same email. Not invited yet? Ask your admin to add you.</p>
         </> : <>
           <button className="auth-back" type="button" onClick={() => { setStep('email'); setError(''); }}><ArrowDownLeft size={15} /> Change email</button>
           <h1 id="auth-title">Enter your code</h1>
@@ -488,8 +528,66 @@ function LoginScreen() {
             {error && <p className="auth-error" role="alert">{error}</p>}
             <button className="button button-primary auth-submit" type="submit" disabled={submitting}>{submitting ? 'Verifying...' : <>Sign in <ChevronRight size={16} /></>}</button>
           </form>
-          <p className="auth-note">Your verification code is sent by Supabase Auth.</p>
+          <p className="auth-note">
+            Your verification code is sent by Supabase Auth.{' '}
+            <button className="operator-text-button" type="button" disabled={submitting || cooldown > 0} onClick={() => void requestCode()}>
+              {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
+            </button>
+          </p>
         </>}
+      </section>
+    </main>
+  );
+}
+
+function CompleteProfile({ userId, email, initialName, onSaved, onSignOut }: {
+  userId: string;
+  email: string;
+  initialName: string;
+  onSaved: (name: string, phone: string) => void;
+  onSignOut: () => void;
+}) {
+  const [name, setName] = useState(initialName);
+  const [phone, setPhone] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function save(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleanName = name.trim();
+    const cleanPhone = phone.replace(/[\s-]/g, '');
+    if (cleanName.length < 2) { setError('Enter your full name.'); return; }
+    if (!/^\+?\d{9,15}$/.test(cleanPhone)) { setError('Enter a valid phone number, e.g. +254 7XX XXX XXX.'); return; }
+    if (!supabase) { setError('Supabase is not configured.'); return; }
+    setError('');
+    setSaving(true);
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ full_name: cleanName, phone: cleanPhone })
+      .eq('id', userId);
+    setSaving(false);
+    if (updateError) { setError(updateError.message); return; }
+    onSaved(cleanName, cleanPhone);
+  }
+
+  return (
+    <main className="auth-shell">
+      <section className="auth-card" aria-labelledby="profile-title">
+        <div className="auth-brand"><span className="brand-mark"><Activity size={21} strokeWidth={2.7} /></span><span className="brand-name">pulse<span>.</span></span></div>
+        <div className="auth-kicker">WELCOME TO UPENDO CIRCLE</div>
+        <h1 id="profile-title">Complete your profile</h1>
+        <p className="auth-copy">Confirm your details so your circle can recognise you on the dashboard.</p>
+        <form className="auth-form" onSubmit={save}>
+          <label htmlFor="profile-name">Full name</label>
+          <input id="profile-name" type="text" value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" autoFocus required />
+          <label htmlFor="profile-email">Email address</label>
+          <input id="profile-email" type="email" value={email} readOnly disabled />
+          <label htmlFor="profile-phone">Phone number</label>
+          <input id="profile-phone" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+254 7XX XXX XXX" autoComplete="tel" required />
+          {error && <p className="auth-error" role="alert">{error}</p>}
+          <button className="button button-primary auth-submit" type="submit" disabled={saving}>{saving ? 'Saving...' : <>Continue to dashboard <ChevronRight size={16} /></>}</button>
+        </form>
+        <p className="auth-note"><ShieldCheck size={14} /> Visible only to members of your circle. <button className="operator-text-button" type="button" onClick={onSignOut}>Sign out</button></p>
       </section>
     </main>
   );
