@@ -4,7 +4,7 @@ import {
   ChartNoAxesColumnIncreasing, Check, CheckCircle2, ChevronDown, ChevronRight,
   CircleHelp, Clock3, Coins, CreditCard, FileClock, Gavel,
   HandCoins, HeartHandshake, Home, Landmark, LogOut, Menu, MessageSquareText,
-  MoreHorizontal, Plus, RotateCcw, Settings, ShieldCheck, Users,
+  Plus, RotateCcw, Settings, ShieldCheck, Users,
   Vote, Wallet, X,
 } from 'lucide-react';
 import {
@@ -59,9 +59,10 @@ const transactions = [
 const fmt = (amount: number) => `KES ${amount.toLocaleString('en-KE')}`;
 
 function App() {
-  const previewMode = import.meta.env.DEV && (
-    new URLSearchParams(window.location.search).get('preview') === '1'
-  );
+  const [isDemo, setIsDemo] = useState(() => {
+    return new URLSearchParams(window.location.search).get('preview') === '1';
+  });
+  const previewMode = isDemo;
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [profileName, setProfileName] = useState('');
@@ -259,12 +260,26 @@ function App() {
     }
   }
 
+  function enterDemoMode() {
+    const url = new URL(window.location.href);
+    url.searchParams.set('preview', '1');
+    window.history.pushState({}, '', url.toString());
+    setIsDemo(true);
+  }
+
+  function exitDemoMode() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('preview');
+    window.history.pushState({}, '', url.toString());
+    setIsDemo(false);
+  }
+
   if (authLoading) {
     return <main className="auth-shell"><section className="auth-card"><div className="auth-brand"><span className="brand-mark"><Activity size={21} strokeWidth={2.7} /></span><span className="brand-name">pulse<span>.</span></span></div><p className="auth-copy">Checking your secure session...</p></section></main>;
   }
 
   if (!user && !previewMode) {
-    return <LoginScreen />;
+    return <LoginScreen onEnterDemo={enterDemoMode} />;
   }
 
   if (!previewMode && membership !== 'active') {
@@ -354,7 +369,7 @@ function App() {
 
         <div className="sidebar-bottom">
           <div className="help-card"><span className="help-icon"><CircleHelp size={16} /></span><strong>Need a hand?</strong><span>We’re here to help your group grow.</span><button onClick={() => flash('Help centre opened.')}>Visit help centre <ArrowUpRight size={13} /></button></div>
-          <div className="profile-row"><div className="profile-avatar">{initials}</div><div className="profile-copy"><strong>{displayName}</strong><span>{user?.email ?? 'Preview mode'}{profilePhone ? ` · ${profilePhone}` : ''} · {role}</span></div><button className="icon-button profile-more" aria-label={previewMode ? 'Profile options' : 'Sign out'} title={previewMode ? 'Profile options' : 'Sign out'} onClick={() => previewMode ? flash('Profile options') : supabase?.auth.signOut()}>{previewMode ? <MoreHorizontal size={19} /> : <LogOut size={18} />}</button></div>
+          <div className="profile-row"><div className="profile-avatar">{initials}</div><div className="profile-copy"><strong>{displayName}</strong><span>{user?.email ?? 'Preview mode'}{profilePhone ? ` · ${profilePhone}` : ''} · {role}</span></div><button className="icon-button profile-more" aria-label={previewMode ? 'Exit demo' : 'Sign out'} title={previewMode ? 'Exit demo' : 'Sign out'} onClick={() => previewMode ? exitDemoMode() : supabase?.auth.signOut()}><LogOut size={18} /></button></div>
         </div>
       </aside>
 
@@ -373,7 +388,7 @@ function App() {
         </header>
 
         <div className="page-content">
-          {previewMode && <section className="role-notice"><CircleHelp size={17} /><span><strong>Demo preview</strong> · dashboard figures are sample data.</span></section>}
+          {previewMode && <section className="role-notice"><CircleHelp size={17} /><span><strong>Demo preview</strong> · dashboard figures are sample data.</span><button onClick={exitDemoMode}>Return to sign in</button></section>}
           {!previewMode && previewRole && <section className="role-notice"><CircleHelp size={17} /><span><strong>Previewing {viewRole.replace('_', ' ')} screen</strong> · You remain signed in as {role.replace('_', ' ')}; screen data is sample data and your permissions have not changed.</span><button onClick={() => setPreviewRole(null)}>Return to my dashboard</button></section>}
           <section className="welcome-row">
             <div><div className="eyebrow"><span className="eyebrow-line" /> FRIDAY, 25 SEPTEMBER 2026</div><h1>{page !== 'Overview' ? page : viewRole === 'MEMBER' ? `Good morning, ${displayName}` : viewRole === 'ACCOUNTANT' ? 'Financial approvals' : viewRole === 'CHAIRMAN' ? 'Circle governance' : 'System operations'}</h1><p className="welcome-subtitle">{page !== 'Overview' ? `Your Upendo Circle ${page.toLowerCase()} at a glance.` : viewRole === 'MEMBER' ? 'Here’s what’s happening with your circle today.' : viewRole === 'ACCOUNTANT' ? 'Verify contributions, review disbursements and reconcile circle transactions.' : viewRole === 'CHAIRMAN' ? 'Support members and keep circle governance moving.' : 'Monitor containers, scheduled jobs and the Pulse system.'}</p></div>
@@ -429,7 +444,7 @@ function App() {
   );
 }
 
-function LoginScreen() {
+function LoginScreen({ onEnterDemo }: { onEnterDemo: () => void }) {
   const [step, setStep] = useState<'email' | 'otp'>('email');
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
@@ -457,7 +472,7 @@ function LoginScreen() {
     event?.preventDefault();
     if (submitting || cooldown > 0) return;
     if (!supabase) {
-      setError('Supabase is not configured. Add the project URL and anon key to .env.local.');
+      setError('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment variables, or explore in demo mode below.');
       return;
     }
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
@@ -485,7 +500,7 @@ function LoginScreen() {
   async function verifyCode(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase) {
-      setError('Supabase is not configured. Add the project URL and anon key to .env.local.');
+      setError('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment variables, or explore in demo mode below.');
       return;
     }
     if (!/^\d{6}$/.test(otp)) {
@@ -517,7 +532,12 @@ function LoginScreen() {
             {error && <p className="auth-error" role="alert">{error}</p>}
             <button className="button button-primary auth-submit" type="submit" disabled={submitting}>            {submitting ? 'Sending code...' : <>Email me a sign-in code <ChevronRight size={16} /></>}</button>
           </form>
-                      <p className="auth-note"><ShieldCheck size={14} /> Invited by your circle admin? Use the same email. Not invited yet? Ask your admin to add you.</p>
+          <div style={{ marginTop: '14px' }}>
+            <button type="button" className="button button-quiet" style={{ width: '100%' }} onClick={onEnterDemo}>
+              Explore demo mode without signing in
+            </button>
+          </div>
+          <p className="auth-note"><ShieldCheck size={14} /> Invited by your circle admin? Use the same email. Not invited yet? Ask your admin to add you.</p>
         </> : <>
           <button className="auth-back" type="button" onClick={() => { setStep('email'); setError(''); }}><ArrowDownLeft size={15} /> Change email</button>
           <h1 id="auth-title">Enter your code</h1>
