@@ -19,6 +19,17 @@ The dashboard currently uses local demo data stored in the React components. Aut
 
 Use the **View as** selector in the top bar to preview the Member, Accountant, Chairman, and System admin experiences.
 
+## Supabase email OTP setup
+
+The sign-in screen requests an email OTP through Supabase Auth. For real users, configure email delivery in the Supabase dashboard:
+
+1. Open **Authentication → SMTP Settings** and enable a custom SMTP provider. Supabase's default sender is for testing only; it is limited to project-team email addresses and currently allows 2 messages per hour.
+2. Set the sender address and SMTP credentials from your email provider. Keep SMTP credentials in Supabase, never in this frontend project.
+3. In **Authentication → URL Configuration**, set the site URL and add the local development origin and deployed app origin to the redirect URL allow list.
+4. In the email template used for sign-in, include Supabase's `{{ .Token }}` variable so recipients can enter the six-digit code.
+
+The login form displays the Supabase error when delivery fails and gives specific guidance for SMTP restrictions and rate limits.
+
 ## Tech stack
 
 - React

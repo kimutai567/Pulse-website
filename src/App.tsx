@@ -462,6 +462,12 @@ function LoginScreen({ onEnterDemo }: { onEnterDemo: () => void }) {
     if (status === 429 || /rate limit|too many|security purposes/i.test(message)) {
       return 'Too many emails requested. Wait a few minutes before asking for another code.';
     }
+    if (/email address not authorized|recipient.*not authorized/i.test(message)) {
+      return 'Supabase is not allowed to email this address yet. Configure custom SMTP in your Supabase project, or test with an address on the project team.';
+    }
+    if (/error sending (the )?(magic link|email)|failed to send.*email/i.test(message)) {
+      return 'Supabase could not deliver the email. Configure custom SMTP in Authentication → SMTP Settings. The default sender is limited to project-team addresses and 2 emails per hour.';
+    }
     if (/expired|invalid/i.test(message)) {
       return 'That code is invalid or has expired. Request a new one.';
     }
@@ -481,20 +487,27 @@ function LoginScreen({ onEnterDemo }: { onEnterDemo: () => void }) {
     }
     setError('');
     setSubmitting(true);
-    const { error: requestError } = await supabase.auth.signInWithOtp({
-      email: email.trim().toLowerCase(),
-      options: {
-        shouldCreateUser: true,
-        emailRedirectTo: window.location.origin,
-      },
-    });
-    setSubmitting(false);
-    if (requestError) {
-      setError(friendlyAuthError(requestError.message, requestError.status));
-      return;
+    try {
+      const { error: requestError } = await supabase.auth.signInWithOtp({
+        email: email.trim().toLowerCase(),
+        options: {
+          shouldCreateUser: true,
+          emailRedirectTo: window.location.origin,
+        },
+      });
+      if (requestError) {
+        setError(friendlyAuthError(requestError.message, requestError.status));
+        return;
+      }
+      setCooldown(60);
+      setStep('otp');
+    } catch (requestError) {
+      setError(requestError instanceof Error
+        ? `Could not reach Supabase Auth: ${requestError.message}`
+        : 'Could not reach Supabase Auth. Check your connection and try again.');
+    } finally {
+      setSubmitting(false);
     }
-    setCooldown(60);
-    setStep('otp');
   }
 
   async function verifyCode(event: React.FormEvent<HTMLFormElement>) {
