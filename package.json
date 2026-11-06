@@ -17,8 +17,9 @@
     "react": "latest",
     "react-dom": "latest",
     "recharts": "latest",
-    "typescript": "^7.0.2",
-    "vite": "latest"
+    "typescript": "^7.0.2"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "vite": "^8.3.6"
+  }
 }
