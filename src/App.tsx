@@ -355,33 +355,67 @@ function App() {
 
   if (!previewMode && user) {
     const selectedCircle = memberships.find((item) => item.circleId === circleId);
+    const name = profileName || user.email || 'Member';
+    const initials = name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
     return (
-      <main className="auth-shell">
-        <section className="auth-card">
-          <div className="auth-brand"><span className="brand-mark"><Activity size={21} strokeWidth={2.7} /></span><span className="brand-name">pulse<span>.</span></span></div>
-          <div className="auth-kicker">YOUR WORKSPACE</div>
-          <h1>{selectedCircle?.name ?? 'Your circle'}</h1>
-          <p className="auth-copy">Signed in as {user.email} · {role.replace('_', ' ')}</p>
-          {memberships.length > 1 && <label className="form-label" htmlFor="live-circle">
-            Select circle
-            <select className="form-input" id="live-circle" value={circleId ?? ''} onChange={(event) => {
-              const selected = memberships.find((item) => item.circleId === event.target.value);
-              if (!selected) return;
-              setCircleId(selected.circleId);
-              setRole(selected.role);
-              setModal(null);
-            }}>
-              {memberships.map((item) => <option key={item.circleId} value={item.circleId}>{item.name}</option>)}
-            </select>
-          </label>}
-          <h2>Financial activity</h2>
-          <p className="auth-copy">Financial records and transactions are not yet available here. Do not use this site to manage real money.</p>
-          {role === 'SYSTEM_ADMIN' && <button className="button button-primary auth-submit" type="button" onClick={() => setModal('invite')}>Invite a member</button>}
-          {platformAdmin && <button className="button button-quiet" type="button" onClick={() => setPlatformView(true)}>Platform administration</button>}
-          <button className="button button-quiet" type="button" onClick={() => { void supabase?.auth.signOut(); }}>Sign out</button>
-        </section>
+      <div className="app-shell">
+        <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
+          <a className="brand" href="#overview" onClick={() => { setPage('Overview'); setSidebarOpen(false); }} aria-label="Pulse home">
+            <span className="brand-mark"><Activity size={21} strokeWidth={2.7} /></span>
+            <span className="brand-name">pulse<span>.</span></span>
+          </a>
+          <label className="container-select">
+            <span className="container-avatar">{selectedCircle?.name.charAt(0).toUpperCase() ?? 'P'}</span>
+            <span className="container-copy"><small>Circle</small>
+              <select className="form-input" aria-label="Select circle" value={circleId ?? ''} onChange={(event) => {
+                const selected = memberships.find((item) => item.circleId === event.target.value);
+                if (!selected) return;
+                setCircleId(selected.circleId);
+                setRole(selected.role);
+                setModal(null);
+                setPage('Overview');
+                setSidebarOpen(false);
+              }}>
+                {memberships.map((item) => <option key={item.circleId} value={item.circleId}>{item.name}</option>)}
+              </select>
+            </span>
+          </label>
+          <div className="nav-caption">WORKSPACE</div>
+          <nav className="main-nav" aria-label="Main navigation">
+            {navItems.map(({ label, icon: Icon }) => (
+              <button key={label} className={`nav-link ${page === label ? 'nav-active' : ''}`} onClick={() => { setPage(label); setSidebarOpen(false); }}>
+                <Icon size={17} strokeWidth={1.8} /><span>{label}</span>
+              </button>
+            ))}
+          </nav>
+          {platformAdmin && <button className="nav-link" onClick={() => { setPlatformView(true); setSidebarOpen(false); }}><ShieldCheck size={17} /><span>Platform administration</span></button>}
+          <div className="sidebar-bottom">
+            <div className="profile-row">
+              <div className="profile-avatar">{initials}</div>
+              <div className="profile-copy"><strong>{name}</strong><span>{user.email} · {role.replace('_', ' ')}</span></div>
+              <button className="icon-button profile-more" aria-label="Sign out" title="Sign out" onClick={() => { void supabase?.auth.signOut(); }}><LogOut size={18} /></button>
+            </div>
+          </div>
+        </aside>
+        {sidebarOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} />}
+        <main className="main-area">
+          <header className="topbar">
+            <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setSidebarOpen(true)}><Menu size={19} /></button>
+            <div className="breadcrumb"><span>{selectedCircle?.name ?? 'Your circle'}</span><ChevronRight size={14} /><strong>{page}</strong></div>
+          </header>
+          <div className="page-content">
+            <section className="welcome-row">
+              <div><div className="eyebrow"><span className="eyebrow-line" /> YOUR WORKSPACE</div><h1>{page === 'Overview' ? `Welcome, ${name}` : page}</h1><p>{selectedCircle?.name ?? 'Your circle'} · {role.replace('_', ' ')}</p></div>
+              {role === 'SYSTEM_ADMIN' && <div className="welcome-actions"><button className="button button-primary" type="button" onClick={() => setModal('invite')}><Plus size={16} /> Invite a member</button></div>}
+            </section>
+            <section className="panel operator-panel">
+              <div className="panel-heading"><div><div className="section-kicker">CIRCLE WORKSPACE</div><h2>{page === 'Overview' ? 'Financial activity' : page}</h2></div></div>
+              <p className="auth-copy">This feature is not available yet. No financial records are shown or processed here; do not use this site to manage real money.</p>
+            </section>
+          </div>
+        </main>
         {modal === 'invite' && selectedCircle && <InviteModal circleName={selectedCircle.name} onClose={() => setModal(null)} onSend={sendInvite} />}
-      </main>
+      </div>
     );
   }
 
