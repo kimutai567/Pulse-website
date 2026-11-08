@@ -353,7 +353,7 @@ function App() {
     />;
   }
 
-  if (!previewMode && user) {
+  if (!previewMode && user && !previewRole) {
     const selectedCircle = memberships.find((item) => item.circleId === circleId);
     const name = profileName || user.email || 'Member';
     const initials = name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
@@ -402,6 +402,17 @@ function App() {
           <header className="topbar">
             <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setSidebarOpen(true)}><Menu size={19} /></button>
             <div className="breadcrumb"><span>{selectedCircle?.name ?? 'Your circle'}</span><ChevronRight size={14} /><strong>{page}</strong></div>
+            {canPreviewRoles && <div className="topbar-actions"><label className="role-picker"><span>VIEW AS</span><select value={role} aria-label="View dashboard as" onChange={(event) => {
+              const selected = event.target.value;
+              if (!isRole(selected)) return;
+              setPreviewRole(selected === role ? null : selected);
+              setPage('Overview');
+            }}>
+              <option value="MEMBER">Member</option>
+              {(role === 'SYSTEM_ADMIN' || role === 'ACCOUNTANT') && <option value="ACCOUNTANT">Accountant</option>}
+              {(role === 'SYSTEM_ADMIN' || role === 'CHAIRMAN') && <option value="CHAIRMAN">Chairman</option>}
+              {role === 'SYSTEM_ADMIN' && <option value="SYSTEM_ADMIN">System admin</option>}
+            </select><ChevronDown size={14} /></label></div>}
           </header>
           <div className="page-content">
             <section className="welcome-row">
