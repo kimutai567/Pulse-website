@@ -12,10 +12,8 @@ import {
 } from 'recharts';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
-import { PlatformAdmin } from './PlatformAdmin';
 
 type Role = 'MEMBER' | 'ACCOUNTANT' | 'CHAIRMAN' | 'SYSTEM_ADMIN';
-type CircleMembership = { circleId: string; name: string; role: Role };
 type Page = 'Overview' | 'Contributions' | 'Rotation' | 'Loans' | 'Reserve & dividends' | 'Votes & proposals' | 'Activity';
 type Modal = 'payment' | 'loan' | 'invite' | null;
 type DemoPaymentStatus = 'PENDING' | 'VERIFIED' | 'REJECTED';
@@ -59,14 +57,6 @@ const transactions = [
 ];
 
 const fmt = (amount: number) => `KES ${amount.toLocaleString('en-KE')}`;
-const isRole = (value: string): value is Role =>
-  value === 'MEMBER' || value === 'ACCOUNTANT' || value === 'CHAIRMAN' || value === 'SYSTEM_ADMIN';
-function circleNameFromRelation(value: unknown): string | null {
-  const circle = Array.isArray(value) && value.length === 1 ? value[0] : value;
-  return circle && typeof circle === 'object' && 'name' in circle && typeof circle.name === 'string'
-    ? circle.name
-    : null;
-}
 
 function App() {
   const [isDemo, setIsDemo] = useState(() => {
@@ -91,9 +81,6 @@ function App() {
   const [membership, setMembership] = useState<'loading' | 'none' | 'active'>('loading');
   const [membershipError, setMembershipError] = useState('');
   const [circleId, setCircleId] = useState<string | null>(null);
-  const [memberships, setMemberships] = useState<CircleMembership[]>([]);
-  const [platformAdmin, setPlatformAdmin] = useState(false);
-  const [platformView, setPlatformView] = useState(false);
   const viewRole = previewMode ? role : previewRole ?? role;
   const canPreviewRoles = previewMode || role !== 'MEMBER';
 
@@ -104,40 +91,23 @@ function App() {
     setMembership('loading');
     setMembershipError('');
     setCircleId(null);
-    setMemberships([]);
-    setPlatformAdmin(false);
-    setPlatformView(false);
     void (async () => {
       try {
         const { error: inviteError } = await supabase.rpc('accept_circle_invites');
         if (inviteError) throw new Error(inviteError.message);
 
-        if (import.meta.env.VITE_PLATFORM_ADMIN_ENABLED === 'true') {
-          const { data: isAdmin, error: platformError } = await supabase.rpc('is_platform_admin');
-          if (platformError) throw new Error(platformError.message);
-          if (!current) return;
-          setPlatformAdmin(isAdmin === true);
-          setPlatformView(isAdmin === true);
-        }
-
         const { data, error } = await supabase
           .from('circle_members')
-          .select('circle_id, role, circles(name)')
-          .eq('user_id', user.id);
+          .select('circle_id, role')
+          .eq('user_id', user.id)
+          .limit(1)
+          .maybeSingle();
         if (error) throw new Error(error.message);
         if (!current) return;
 
-        const available: CircleMembership[] = data.map((item) => {
-          const name = circleNameFromRelation(item.circles);
-          if (!isRole(item.role) || !name) {
-            throw new Error('A circle membership could not be loaded. Contact your administrator.');
-          }
-          return { circleId: item.circle_id, name, role: item.role };
-        });
-        setMemberships(available);
-        if (available.length > 0) {
-          setCircleId(available[0].circleId);
-          setRole(available[0].role);
+        if (data) {
+          setCircleId(data.circle_id);
+          setRole(data.role as Role);
           setMembership('active');
         } else {
           setMembership('none');
@@ -312,13 +282,6 @@ function App() {
     return <LoginScreen onEnterDemo={enterDemoMode} />;
   }
 
-  if (!previewMode && user && membership !== 'loading' && platformAdmin && platformView) {
-    return <PlatformAdmin
-      onCircleView={membership === 'active' ? () => setPlatformView(false) : undefined}
-      onSignOut={() => { void supabase?.auth.signOut(); }}
-    />;
-  }
-
   if (!previewMode && membership !== 'active') {
     const brand = <div className="auth-brand"><span className="brand-mark"><Activity size={21} strokeWidth={2.7} /></span><span className="brand-name">pulse<span>.</span></span></div>;
     if (membership === 'loading') {
@@ -353,85 +316,7 @@ function App() {
     />;
   }
 
-  if (!previewMode && user && !previewRole) {
-    const selectedCircle = memberships.find((item) => item.circleId === circleId);
-    const name = profileName || user.email || 'Member';
-    const initials = name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
-    return (
-      <div className="app-shell">
-        <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
-          <a className="brand" href="#overview" onClick={() => { setPage('Overview'); setSidebarOpen(false); }} aria-label="Pulse home">
-            <span className="brand-mark"><Activity size={21} strokeWidth={2.7} /></span>
-            <span className="brand-name">pulse<span>.</span></span>
-          </a>
-          <label className="container-select">
-            <span className="container-avatar">{selectedCircle?.name.charAt(0).toUpperCase() ?? 'P'}</span>
-            <span className="container-copy"><small>Circle</small>
-              <select className="form-input" aria-label="Select circle" value={circleId ?? ''} onChange={(event) => {
-                const selected = memberships.find((item) => item.circleId === event.target.value);
-                if (!selected) return;
-                setCircleId(selected.circleId);
-                setRole(selected.role);
-                setModal(null);
-                setPage('Overview');
-                setSidebarOpen(false);
-              }}>
-                {memberships.map((item) => <option key={item.circleId} value={item.circleId}>{item.name}</option>)}
-              </select>
-            </span>
-          </label>
-          <div className="nav-caption">WORKSPACE</div>
-          <nav className="main-nav" aria-label="Main navigation">
-            {navItems.map(({ label, icon: Icon }) => (
-              <button key={label} className={`nav-link ${page === label ? 'nav-active' : ''}`} onClick={() => { setPage(label); setSidebarOpen(false); }}>
-                <Icon size={17} strokeWidth={1.8} /><span>{label}</span>
-              </button>
-            ))}
-          </nav>
-          {platformAdmin && <button className="nav-link" onClick={() => { setPlatformView(true); setSidebarOpen(false); }}><ShieldCheck size={17} /><span>Platform administration</span></button>}
-          <div className="sidebar-bottom">
-            <div className="profile-row">
-              <div className="profile-avatar">{initials}</div>
-              <div className="profile-copy"><strong>{name}</strong><span>{user.email} · {role.replace('_', ' ')}</span></div>
-              <button className="icon-button profile-more" aria-label="Sign out" title="Sign out" onClick={() => { void supabase?.auth.signOut(); }}><LogOut size={18} /></button>
-            </div>
-          </div>
-        </aside>
-        {sidebarOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} />}
-        <main className="main-area">
-          <header className="topbar">
-            <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setSidebarOpen(true)}><Menu size={19} /></button>
-            <div className="breadcrumb"><span>{selectedCircle?.name ?? 'Your circle'}</span><ChevronRight size={14} /><strong>{page}</strong></div>
-            {canPreviewRoles && <div className="topbar-actions"><label className="role-picker"><span>VIEW AS</span><select value={role} aria-label="View dashboard as" onChange={(event) => {
-              const selected = event.target.value;
-              if (!isRole(selected)) return;
-              setPreviewRole(selected === role ? null : selected);
-              setPage('Overview');
-            }}>
-              <option value="MEMBER">Member</option>
-              {(role === 'SYSTEM_ADMIN' || role === 'ACCOUNTANT') && <option value="ACCOUNTANT">Accountant</option>}
-              {(role === 'SYSTEM_ADMIN' || role === 'CHAIRMAN') && <option value="CHAIRMAN">Chairman</option>}
-              {role === 'SYSTEM_ADMIN' && <option value="SYSTEM_ADMIN">System admin</option>}
-            </select><ChevronDown size={14} /></label></div>}
-          </header>
-          <div className="page-content">
-            <section className="welcome-row">
-              <div><div className="eyebrow"><span className="eyebrow-line" /> YOUR WORKSPACE</div><h1>{page === 'Overview' ? `Welcome, ${name}` : page}</h1><p>{selectedCircle?.name ?? 'Your circle'} · {role.replace('_', ' ')}</p></div>
-              {role === 'SYSTEM_ADMIN' && <div className="welcome-actions"><button className="button button-primary" type="button" onClick={() => setModal('invite')}><Plus size={16} /> Invite a member</button></div>}
-            </section>
-            <section className="panel operator-panel">
-              <div className="panel-heading"><div><div className="section-kicker">CIRCLE WORKSPACE</div><h2>{page === 'Overview' ? 'Financial activity' : page}</h2></div></div>
-              <p className="auth-copy">This feature is not available yet. No financial records are shown or processed here; do not use this site to manage real money.</p>
-            </section>
-          </div>
-        </main>
-        {modal === 'invite' && selectedCircle && <InviteModal circleName={selectedCircle.name} onClose={() => setModal(null)} onSend={sendInvite} />}
-      </div>
-    );
-  }
-
   const displayName = profileName || user?.email?.split('@')[0] || 'Preview member';
-  const currentCircleName = memberships.find((item) => item.circleId === circleId)?.name ?? 'Upendo Circle';
   const initials = displayName
     .split(/\s+/)
     .map((part) => part[0])
@@ -461,20 +346,11 @@ function App() {
           <span className="brand-name">pulse<span>.</span></span>
         </a>
 
-        {previewMode ? <div className="container-select"><span className="container-avatar">U</span><span className="container-copy"><strong>Upendo Circle</strong><small>Demo workspace</small></span></div> : (
-          <label className="container-select">
-            <span className="container-avatar">{currentCircleName.charAt(0).toUpperCase()}</span>
-            <span className="container-copy"><small>Circle</small><select className="form-input" aria-label="Select circle" value={circleId ?? ''} onChange={(event) => {
-              const selected = memberships.find((item) => item.circleId === event.target.value);
-              if (!selected) return;
-              setCircleId(selected.circleId);
-              setRole(selected.role);
-              setPreviewRole(null);
-              setPage('Overview');
-              setSidebarOpen(false);
-            }}>{memberships.map((item) => <option key={item.circleId} value={item.circleId}>{item.name}</option>)}</select></span>
-          </label>
-        )}
+        <button className="container-select" onClick={() => flash('Upendo Circle workspace selected.')}>
+          <span className="container-avatar">U</span>
+          <span className="container-copy"><strong>Upendo Circle</strong><small>Community · 8 members</small></span>
+          <ChevronDown size={15} className="muted-icon" />
+        </button>
 
         <div className="nav-caption">WORKSPACE</div>
         <nav className="main-nav" aria-label="Main navigation">
@@ -488,7 +364,6 @@ function App() {
         </nav>
 
         <div className="nav-caption tools-caption">YOUR ACCOUNT</div>
-        {platformAdmin && <button className="nav-link" onClick={() => setPlatformView(true)}><ShieldCheck size={17} strokeWidth={1.8} /><span>Platform administration</span></button>}
         <button className="nav-link" onClick={() => flash('Notification preferences are up to date.')}><Bell size={17} strokeWidth={1.8} /><span>Notifications</span><span className="notification-count">3</span></button>
         <button className="nav-link" onClick={() => flash('Account settings are available to invited members.')}><Settings size={17} strokeWidth={1.8} /><span>Settings</span></button>
 
@@ -503,7 +378,7 @@ function App() {
       <main className="main-area">
         <header className="topbar">
           <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setSidebarOpen(true)}><Menu size={19} /></button>
-          <div className="breadcrumb"><span>{currentCircleName}</span><ChevronRight size={14} /><strong>{page}</strong></div>
+          <div className="breadcrumb"><span>Upendo Circle</span><ChevronRight size={14} /><strong>{page}</strong></div>
           <div className="topbar-actions">
             {canPreviewRoles && <label className="role-picker"><span>{previewMode ? 'DEMO VIEW' : 'PREVIEW AS'}</span><select value={viewRole} onChange={(event) => { const selectedRole = event.target.value as Role; if (previewMode) setRole(selectedRole); else setPreviewRole(selectedRole === role ? null : selectedRole); setPage('Overview'); }} aria-label="Preview dashboard role"><option value="MEMBER">Member</option>{(previewMode || role === 'SYSTEM_ADMIN' || role === 'ACCOUNTANT') && <option value="ACCOUNTANT">Accountant</option>}{(previewMode || role === 'SYSTEM_ADMIN' || role === 'CHAIRMAN') && <option value="CHAIRMAN">Chairman</option>}{(previewMode || role === 'SYSTEM_ADMIN') && <option value="SYSTEM_ADMIN">System admin</option>}</select><ChevronDown size={14} /></label>}
             <span className="topbar-divider" />
@@ -514,7 +389,7 @@ function App() {
 
         <div className="page-content">
           {previewMode && <section className="role-notice"><CircleHelp size={17} /><span><strong>Demo preview</strong> · dashboard figures are sample data.</span><button onClick={exitDemoMode}>Return to sign in</button></section>}
-          {!previewMode && <section className="role-notice"><CircleHelp size={17} /><span><strong>Prototype notice</strong> · Circle dashboard figures and financial actions are sample data, not real records.</span></section>}
+          {!previewMode && <section className="role-notice"><CircleHelp size={17} /><span><strong>Sample dashboard</strong> · Figures and financial actions are demo-only. Do not use this site to manage real money.</span></section>}
           {!previewMode && previewRole && <section className="role-notice"><CircleHelp size={17} /><span><strong>Previewing {viewRole.replace('_', ' ')} screen</strong> · You remain signed in as {role.replace('_', ' ')}; screen data is sample data and your permissions have not changed.</span><button onClick={() => setPreviewRole(null)}>Return to my dashboard</button></section>}
           <section className="welcome-row">
             <div><div className="eyebrow"><span className="eyebrow-line" /> FRIDAY, 25 SEPTEMBER 2026</div><h1>{page !== 'Overview' ? page : viewRole === 'MEMBER' ? `Good morning, ${displayName}` : viewRole === 'ACCOUNTANT' ? 'Financial approvals' : viewRole === 'CHAIRMAN' ? 'Circle governance' : 'System operations'}</h1><p className="welcome-subtitle">{page !== 'Overview' ? `Your Upendo Circle ${page.toLowerCase()} at a glance.` : viewRole === 'MEMBER' ? 'Here’s what’s happening with your circle today.' : viewRole === 'ACCOUNTANT' ? 'Verify contributions, review disbursements and reconcile circle transactions.' : viewRole === 'CHAIRMAN' ? 'Support members and keep circle governance moving.' : 'Monitor containers, scheduled jobs and the Pulse system.'}</p></div>
@@ -563,7 +438,7 @@ function App() {
         </div>
       </main>
 
-      {modal === 'invite' ? <InviteModal circleName={currentCircleName} onClose={() => setModal(null)} onSend={sendInvite} /> : modal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setModal(null); }}><section className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-heading"><span className="modal-icon">{modal === 'payment' ? <ArrowDownLeft size={19} /> : <HeartHandshake size={19} />}</span><button className="icon-button" aria-label="Close dialog" onClick={() => setModal(null)}><X size={19} /></button></div><div className="section-kicker">{modal === 'payment' ? 'WEEKLY CONTRIBUTION · WEEK 38' : 'UPENDO CIRCLE · MEMBER LOAN'}</div><h2 id="modal-title">{modal === 'payment' ? 'Record a payment' : 'Request a loan'}</h2><p className="modal-description">{modal === 'payment' ? 'Submit your M-Pesa details. Your accountant will verify the payment before it is added to your circle records.' : 'Your self-guaranteed borrowing limit is KES 12,400. Final eligibility is confirmed during review.'}</p><form onSubmit={modal === 'payment' ? submitPayment : submitLoan}>{modal === 'payment' ? <><label className="form-label" htmlFor="payment-amount">Amount paid</label><div className="input-with-prefix"><span>KES</span><input id="payment-amount" type="number" min="1" defaultValue="1000" required /></div><label className="form-label" htmlFor="payment-code">M-Pesa transaction code</label><input className="form-input" id="payment-code" value={paymentCode} onChange={(event) => setPaymentCode(event.target.value.toUpperCase())} placeholder="e.g. QJK4M8P2XA" maxLength={12} required /><label className="form-label" htmlFor="payment-sender">Sender phone number</label><input className="form-input" id="payment-sender" type="tel" placeholder="+254 7XX XXX XXX" required /><div className="form-safe-note"><ShieldCheck size={15} /> Only authorized accountants can review your payment reference.</div></> : <><label className="form-label" htmlFor="loan-amount">Amount requested</label><div className="input-with-prefix"><span>KES</span><input id="loan-amount" type="number" min="500" max="12400" step="100" value={loanAmount} onChange={(event) => setLoanAmount(event.target.value)} placeholder="e.g. 5,000" required /></div><label className="form-label" htmlFor="loan-purpose">Purpose</label><select id="loan-purpose" className="form-input" defaultValue=""><option value="" disabled>Select a purpose</option><option>Education</option><option>Medical</option><option>Business</option><option>Home & family</option><option>Other</option></select><div className="loan-term-box"><span>Standard terms</span><strong>10% flat interest · 14 days + 7-day grace</strong></div></>}<div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setModal(null)}>Cancel</button><button className="button button-primary" type="submit">{modal === 'payment' ? 'Submit for review' : 'Continue request'} <ChevronRight size={16} /></button></div><p className="demo-disclaimer">Demo only. No real money or transactions are processed.</p></form></section></div>}
+      {modal === 'invite' ? <InviteModal onClose={() => setModal(null)} onSend={sendInvite} /> : modal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setModal(null); }}><section className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-heading"><span className="modal-icon">{modal === 'payment' ? <ArrowDownLeft size={19} /> : <HeartHandshake size={19} />}</span><button className="icon-button" aria-label="Close dialog" onClick={() => setModal(null)}><X size={19} /></button></div><div className="section-kicker">{modal === 'payment' ? 'WEEKLY CONTRIBUTION · WEEK 38' : 'UPENDO CIRCLE · MEMBER LOAN'}</div><h2 id="modal-title">{modal === 'payment' ? 'Record a payment' : 'Request a loan'}</h2><p className="modal-description">{modal === 'payment' ? 'Submit your M-Pesa details. Your accountant will verify the payment before it is added to your circle records.' : 'Your self-guaranteed borrowing limit is KES 12,400. Final eligibility is confirmed during review.'}</p><form onSubmit={modal === 'payment' ? submitPayment : submitLoan}>{modal === 'payment' ? <><label className="form-label" htmlFor="payment-amount">Amount paid</label><div className="input-with-prefix"><span>KES</span><input id="payment-amount" type="number" min="1" defaultValue="1000" required /></div><label className="form-label" htmlFor="payment-code">M-Pesa transaction code</label><input className="form-input" id="payment-code" value={paymentCode} onChange={(event) => setPaymentCode(event.target.value.toUpperCase())} placeholder="e.g. QJK4M8P2XA" maxLength={12} required /><label className="form-label" htmlFor="payment-sender">Sender phone number</label><input className="form-input" id="payment-sender" type="tel" placeholder="+254 7XX XXX XXX" required /><div className="form-safe-note"><ShieldCheck size={15} /> Only authorized accountants can review your payment reference.</div></> : <><label className="form-label" htmlFor="loan-amount">Amount requested</label><div className="input-with-prefix"><span>KES</span><input id="loan-amount" type="number" min="500" max="12400" step="100" value={loanAmount} onChange={(event) => setLoanAmount(event.target.value)} placeholder="e.g. 5,000" required /></div><label className="form-label" htmlFor="loan-purpose">Purpose</label><select id="loan-purpose" className="form-input" defaultValue=""><option value="" disabled>Select a purpose</option><option>Education</option><option>Medical</option><option>Business</option><option>Home & family</option><option>Other</option></select><div className="loan-term-box"><span>Standard terms</span><strong>10% flat interest · 14 days + 7-day grace</strong></div></>}<div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setModal(null)}>Cancel</button><button className="button button-primary" type="submit">{modal === 'payment' ? 'Submit for review' : 'Continue request'} <ChevronRight size={16} /></button></div><p className="demo-disclaimer">Demo only. No real money or transactions are processed.</p></form></section></div>}
 
       {notice && <div className="toast" role="status"><BadgeCheck size={17} />{notice}<button aria-label="Dismiss notification" onClick={() => setNotice('')}><X size={15} /></button></div>}
     </div>
@@ -837,8 +712,7 @@ function ChairmanDashboard({ onNotify }: { onNotify: (message: string) => void }
   </>;
 }
 
-function InviteModal({ circleName, onClose, onSend }: {
-  circleName: string;
+function InviteModal({ onClose, onSend }: {
   onClose: () => void;
   onSend: (email: string, fullName: string, role: Role) => Promise<void>;
 }) {
@@ -870,9 +744,9 @@ function InviteModal({ circleName, onClose, onSend }: {
           <span className="modal-icon"><Users size={19} /></span>
           <button className="icon-button" aria-label="Close dialog" onClick={onClose} disabled={sending}><X size={19} /></button>
         </div>
-        <div className="section-kicker">{circleName} · MEMBER ACCESS</div>
+        <div className="section-kicker">UPENDO CIRCLE · MEMBER ACCESS</div>
         <h2 id="invite-title">Invite a member</h2>
-        <p className="modal-description">Choose the role they should have. Their invitation email will link their account to {circleName} with that role.</p>
+        <p className="modal-description">Choose the role they should have. Their invitation email will link their account to Upendo Circle with that role.</p>
         <form onSubmit={submit}>
           <label className="form-label" htmlFor="invite-name">Full name (optional)</label>
           <input className="form-input" id="invite-name" value={fullName} onChange={(event) => { setFullName(event.target.value); setSent(false); }} placeholder="Member's name" autoComplete="name" />

@@ -15,7 +15,7 @@ Pulse is a community finance workspace for savings circles and other member-led 
 
 ## Frontend-first behavior
 
-Signed-in users see their real circle membership and an unavailable state for financial activity; no sample balances or transactions are presented as real. Authentication and circle invitations are connected to Supabase. Financial actions are not yet available for real use.
+Authentication and circle invitations are connected to Supabase. The dashboard figures and financial actions use sample data, including for signed-in users; they are not real financial records.
 
 The optional demo preview still uses local sample data and is explicitly labeled as a demo. Use its **View as** selector to preview the Member, Accountant, Chairman, and System admin experiences.
 
@@ -115,7 +115,7 @@ Potential next steps for turning the prototype into a production product include
 
 Platform administration is separate from circle membership. Migration `004_platform_administration.sql` adds a platform administrator registry and restricted functions to list containers, create a container, and invite its circle administrator. These functions do not grant platform administrators access to circle financial tables. An administrator who is separately assigned a circle role retains the access granted by that role; a platform administrator who appoints an account as circle administrator grants that account the existing circle administrator permissions.
 
-This feature is disabled by default. Before enabling it, apply migrations 001 through 004 to a separate test Supabase project, verify the permissions and invitation flow there, and configure working Supabase email delivery. Do not rerun already-applied migrations on an existing database. Migration 004 does not automatically grant anyone platform administrator access. An operator with database access must explicitly grant it to an existing account, for example in the Supabase SQL Editor:
+The platform administration screen is not currently connected to the restored dashboard. Before integrating and enabling it, apply migrations 001 through 004 to a separate test Supabase project, verify the permissions and invitation flow there, and configure working Supabase email delivery. Do not rerun already-applied migrations on an existing database. Migration 004 does not automatically grant anyone platform administrator access. An operator with database access must explicitly grant it to an existing account, for example in the Supabase SQL Editor:
 
 ```sql
 insert into public.platform_admins (user_id)
@@ -124,7 +124,7 @@ where lower(email) = lower('admin@example.com')
 on conflict (user_id) do nothing;
 ```
 
-Replace the example address with the intended account and check the affected row count. Set `VITE_PLATFORM_ADMIN_ENABLED=true` for the relevant deployment and rebuild after the migration and grant are in place. Vite environment variables are build-time settings. Keep the feature disabled in production until testing succeeds.
+Replace the example address with the intended account and check the affected row count. Keep the feature disabled in production until integration and testing succeed.
 
 The container and administrator invitation are saved before Supabase sends the sign-in email. If delivery fails, the platform screen offers a retry; the assignment remains pending. Existing users receive their new circle role when they next sign in and accept pending invitations. The platform administrator is not automatically enrolled in new containers.
 
