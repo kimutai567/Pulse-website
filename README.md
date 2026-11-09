@@ -10,6 +10,7 @@ Pulse is a community finance workspace for savings circles and other member-led 
 - Rotation payout schedule and open group proposal voting
 - Accountant workspace for reviewing and approving financial records
 - Chairman workspace showing stored open complaints, proposals, and vote counts (read-only)
+- Shared circle chat with saved history for all current circle members
 - System admin workspace for container health and platform operations
 - Responsive layout with mobile navigation
 
@@ -20,6 +21,8 @@ Authentication and circle invitations are connected to Supabase. After applying 
 This workflow records payments members say they have already made; it does not initiate, receive, or automatically verify M-Pesa payments. Accountants must match the transaction reference manually. Member savings totals and history are calculated only from verified stored contributions. Loan eligibility, circle reserves, rotation payouts, and the member proposal screen are not connected and are shown as unavailable outside the demo preview.
 
 The Chairman dashboard reads existing complaint, proposal, and vote records for the signed-in user's circle. Its counts include complaints marked open or under investigation and proposals marked open; vote totals count responses to those open proposals, including proposals past their closing date until their status changes. Lists show up to ten records. Complaint handling, recommendations, proposal creation, and voting are not connected in the dashboard. Role preview uses the signed-in account's actual permissions and is read-only.
+
+After migration `006_circle_chat.sql` is applied, all current members can read and send messages in their circle's shared chat. New members can read messages from before they joined; former members lose access. Messages remain stored until manually removed by a database administrator or the circle itself is deleted, and the app does not offer message editing or deletion. The chat is not end-to-end encrypted and is intended for circle-wide discussion, not private messages or secrets. Use Refresh to check for new messages and Load older messages to browse history. Demo mode cannot access real chats; role previews can read with the signed-in account's permissions but cannot send.
 
 The optional demo preview still uses local sample data and is explicitly labeled as a demo. Use its **View as** selector to preview the Member, Accountant, Chairman, and System admin experiences.
 
@@ -110,7 +113,7 @@ Next steps for turning the remaining prototype into a production product include
 ## Supabase setup
 
 1. Copy `.env.example` to `.env.local` and add the Supabase project URL and publishable key.
-2. Run `supabase/migrations/001_initial_schema.sql`, `002_invites_and_bootstrap.sql`, `003_accept_circle_invites.sql`, `004_platform_administration.sql` (if using platform administration), and `005_persistent_contributions.sql` in the Supabase SQL Editor, in order. On an existing project, run only migrations that have not already been applied.
+2. Run `supabase/migrations/001_initial_schema.sql`, `002_invites_and_bootstrap.sql`, `003_accept_circle_invites.sql`, `004_platform_administration.sql` (if using platform administration), `005_persistent_contributions.sql`, and `006_circle_chat.sql` in the Supabase SQL Editor, in order. On an existing project, run only migrations that have not already been applied.
 3. Enable Email authentication. Configure the Magic Link email template to include `{{ .ConfirmationURL }}` as the invitation/sign-in link and `{{ .Token }}` as a code alternative. Add the app origin (for example, `http://localhost:5173`) to Supabase's allowed redirect URLs.
 4. The first person to sign in becomes the Upendo Circle System Admin. From the admin dashboard, choose **Invite member**, enter the member's email, and assign Member, Accountant, Chairman, or System Admin. Pulse saves the role before asking Supabase Auth to email the sign-in link; after the invitee signs in, that role is applied automatically. The optional name is used for their profile.
 
