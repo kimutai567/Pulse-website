@@ -719,15 +719,15 @@ function App() {
 
         <div className="page-content">
           {previewMode && <section className="role-notice"><CircleHelp size={17} /><span><strong>Demo preview</strong> · dashboard figures are sample data.</span><button onClick={exitDemoMode}>Return to sign in</button></section>}
-          {!previewMode && <section className="role-notice"><CircleHelp size={17} /><span><strong>{sampleView ? 'Sample dashboard' : 'Contribution workflow'}</strong> · {sampleView ? 'Role previews use sample data only.' : 'Submissions and reviews are stored in Supabase; other dashboard figures are samples. Payments are not processed here.'}</span></section>}
+          {!previewMode && <section className="role-notice"><CircleHelp size={17} /><span><strong>Live workspace</strong> · Connected figures come from Supabase. Other features are marked unavailable. Payments are not processed here.</span></section>}
           {!previewMode && previewRole && <section className="role-notice"><CircleHelp size={17} /><span><strong>Previewing {viewRole.replace('_', ' ')} screen</strong> · Your account is still {role.replace('_', ' ')}. Member figures use only your own verified records; actions are read-only.</span><button onClick={() => setPreviewRole(null)}>Return to my dashboard</button></section>}
           <section className="welcome-row">
             <div><div className="eyebrow"><span className="eyebrow-line" /> {sampleView ? 'FRIDAY, 25 SEPTEMBER 2026' : currentDateLong}</div><h1>{page !== 'Overview' ? page : viewRole === 'MEMBER' ? `Good morning, ${displayName}` : viewRole === 'ACCOUNTANT' ? 'Financial approvals' : viewRole === 'CHAIRMAN' ? 'Circle governance' : sampleView ? 'System operations preview' : 'Circle administration'}</h1><p className="welcome-subtitle">{page !== 'Overview' ? `Your ${sampleView ? 'Upendo Circle' : circleName} ${page.toLowerCase()} at a glance.` : viewRole === 'MEMBER' ? 'Here’s what’s happening with your circle today.' : viewRole === 'ACCOUNTANT' ? sampleView ? 'Verify contributions, review disbursements and reconcile circle transactions.' : 'Match member-submitted weekly payments and record your review.' : viewRole === 'CHAIRMAN' ? 'Support members and keep circle governance moving.' : sampleView ? 'This preview contains demo-only system figures.' : 'Manage membership and review real contribution activity for your circle.'}</p></div>
-            <div className="welcome-actions"><button className="button button-quiet" onClick={() => flash(viewRole === 'CHAIRMAN' ? 'Opening active proposals.' : viewRole === 'SYSTEM_ADMIN' ? sampleView ? 'The system report is a demo preview.' : 'System-wide reporting is not connected yet.' : 'Your monthly report is being prepared.')}><ChartNoAxesColumnIncreasing size={16} /> {viewRole === 'CHAIRMAN' ? 'Proposals' : viewRole === 'SYSTEM_ADMIN' ? 'System report' : 'Reports'}</button>{viewRole === 'MEMBER' ? <button className="button button-primary" disabled={previewRole !== null && !sampleView} onClick={() => { setPaymentError(''); setModal('payment'); }}><Plus size={17} /> {previewRole !== null && !sampleView ? 'Preview only' : 'Log a payment'}</button> : viewRole === 'ACCOUNTANT' || (viewRole === 'SYSTEM_ADMIN' && page === 'Contributions') ? <button className="button button-primary" onClick={() => { if (sampleView || previewRole !== null) flash('Role preview is read-only.'); else setContributionRefresh((value) => value + 1); }}><RotateCcw size={15} /> Refresh queue</button> : viewRole === 'CHAIRMAN' ? <button className="button button-primary" onClick={() => flash('Complaint review opened in demo mode.')}><MessageSquareText size={15} /> Review complaint</button> : sampleView ? <button className="button button-primary" onClick={() => flash('Container creation is a demo-only preview.')}><Plus size={17} /> Create container · demo</button> : <button className="button button-primary" onClick={() => role === 'SYSTEM_ADMIN' && previewRole === null ? setModal('invite') : flash('Admin actions are unavailable in a role preview.')}><Plus size={17} /> Invite member</button>}</div>
+            <div className="welcome-actions"><button className="button button-quiet" onClick={() => viewRole === 'CHAIRMAN' && !sampleView ? document.getElementById('chairman-proposals')?.scrollIntoView({ behavior: 'smooth' }) : flash(viewRole === 'CHAIRMAN' ? 'Opening active proposals.' : viewRole === 'SYSTEM_ADMIN' ? sampleView ? 'The system report is a demo preview.' : 'System-wide reporting is not connected yet.' : 'Your monthly report is being prepared.')}><ChartNoAxesColumnIncreasing size={16} /> {viewRole === 'CHAIRMAN' ? 'Proposals' : viewRole === 'SYSTEM_ADMIN' ? 'System report' : 'Reports'}</button>{viewRole === 'MEMBER' ? <button className="button button-primary" disabled={previewRole !== null && !sampleView} onClick={() => { setPaymentError(''); setModal('payment'); }}><Plus size={17} /> {previewRole !== null && !sampleView ? 'Preview only' : 'Log a payment'}</button> : viewRole === 'ACCOUNTANT' || (viewRole === 'SYSTEM_ADMIN' && page === 'Contributions') ? <button className="button button-primary" onClick={() => { if (sampleView || previewRole !== null) flash('Role preview is read-only.'); else setContributionRefresh((value) => value + 1); }}><RotateCcw size={15} /> Refresh queue</button> : viewRole === 'CHAIRMAN' ? <button className="button button-primary" onClick={() => sampleView ? flash('Complaint review opened in demo mode.') : document.getElementById('chairman-complaints')?.scrollIntoView({ behavior: 'smooth' })}><MessageSquareText size={15} /> View complaints</button> : sampleView ? <button className="button button-primary" onClick={() => flash('Container creation is a demo-only preview.')}><Plus size={17} /> Create container · demo</button> : <button className="button button-primary" onClick={() => role === 'SYSTEM_ADMIN' && previewRole === null ? setModal('invite') : flash('Admin actions are unavailable in a role preview.')}><Plus size={17} /> Invite member</button>}</div>
           </section>
 
           {viewRole === 'ACCOUNTANT' && <section className="role-notice"><ShieldCheck size={17} /><span><strong>Accountant workspace</strong> · {sampleView ? '3 demo items need your review' : contributionError ? 'Contribution queue unavailable' : `${accountantPendingCount} contribution${accountantPendingCount === 1 ? '' : 's'} need review`}</span><button onClick={() => setPage('Contributions')}>Review queue <ArrowRightIcon /></button></section>}
-          {viewRole === 'CHAIRMAN' && <section className="role-notice chairman-notice"><MessageSquareText size={17} /><span><strong>Chairman workspace</strong> · 1 complaint needs attention</span><button onClick={() => flash('Complaint review opened in demo mode.')}>Open complaint <ArrowRightIcon /></button></section>}
+          {viewRole === 'CHAIRMAN' && <section className="role-notice chairman-notice"><MessageSquareText size={17} /><span><strong>Chairman workspace</strong> · {sampleView ? '1 demo complaint needs attention' : 'Circle governance records are shown below.'}</span></section>}
           {viewRole === 'SYSTEM_ADMIN' && <section className="role-notice admin-notice"><ShieldCheck size={17} /><span><strong>{sampleView ? 'System admin preview' : 'Circle administration'}</strong> · {sampleView ? 'The preview contains sample figures.' : 'Live membership and contribution records for this circle.'}</span>{!sampleView && <button onClick={() => setPage('Contributions')}>Review contributions <ArrowRightIcon /></button>}</section>}
 
           {viewRole === 'MEMBER' ? <>
@@ -781,7 +781,7 @@ function App() {
             error={contributionError}
             onReviewPayment={sampleView ? reviewDemoPayment : reviewContribution}
             onNotify={flash}
-          /> : viewRole === 'CHAIRMAN' ? <ChairmanDashboard onNotify={flash} /> : viewRole === 'SYSTEM_ADMIN' && page === 'Contributions' ? <AccountantDashboard
+          /> : viewRole === 'CHAIRMAN' ? sampleView ? <ChairmanDashboard onNotify={flash} /> : <LiveChairmanDashboard circleId={circleId} /> : viewRole === 'SYSTEM_ADMIN' && page === 'Contributions' ? <AccountantDashboard
             payments={accountantPayments}
             isPreview={sampleView}
             isReadOnly={previewRole !== null && !sampleView}
@@ -1125,6 +1125,135 @@ function AccountantDashboard({ payments, isPreview, isReadOnly, isLoading, error
       <section className="panel operator-side-panel"><div className="section-kicker">RECONCILIATION</div><h2>Contribution totals</h2><div className="reconcile-total"><span>Verified contributions</span><strong>{error ? 'Unavailable' : <>{verifiedPayments.length} <small>/ {payments.length}</small></>}</strong></div><div className="progress-track reconcile-progress"><span style={{ width: `${error ? 0 : isPreview ? 86 : reconcilePercent}%` }} /></div><div className="reconcile-row"><span>Verified</span><strong>{error ? 'Unavailable' : fmt(isPreview ? 18000 : verifiedTotal)}</strong></div><div className="reconcile-row"><span>Pending review</span><strong>{error ? 'Unavailable' : fmt(isPreview ? 3000 : pendingTotal)}</strong></div><div className="reconcile-row"><span>Rejected</span><strong>{error ? 'Unavailable' : isPreview ? 'KES 0' : String(rejectedPayments.length)}</strong></div><div className="operator-guardrail"><ShieldCheck size={16} /><span>Contribution submissions and every review decision are written to the audit log.</span></div><button className="operator-text-button" onClick={() => onNotify(isPreview ? 'Demo audit history is not connected.' : 'Audit events are recorded; a history screen is not available yet.')}>Audit history <ChevronRight size={14} /></button></section>
     </div>
     <section className="panel operator-panel recent-approvals"><div className="panel-heading"><div><div className="section-kicker">RECENTLY COMPLETED</div><h2>Approval history</h2></div><button className="text-link" onClick={() => onNotify(isPreview ? 'Full approval history opened in demo mode.' : 'A full approval-history page is not available yet.')}>View history <ArrowUpRight size={14} /></button></div>{isPreview ? <><div className="history-row"><span className="history-check"><Check size={13} /></span><span><strong>Grace Wanjiku</strong><small>Weekly contribution · Week 38</small></span><strong>{fmt(1000)}</strong><span className="table-status status-green">Verified</span><small>Yesterday, 11:24 am</small></div><div className="history-row"><span className="history-check"><Check size={13} /></span><span><strong>David Otieno</strong><small>Loan repayment · Principal</small></span><strong>{fmt(800)}</strong><span className="table-status status-green">Verified</span><small>Mon, Sep 21</small></div></> : payments.filter((payment) => payment.status !== 'PENDING').slice(0, 3).map((payment) => <div className="history-row" key={payment.id}><span className="history-check"><Check size={13} /></span><span><strong>{payment.member}</strong><small>Weekly contribution · Week {payment.weekNumber} · {payment.yearNumber}</small></span><strong>{fmt(payment.amount)}</strong><span className={`table-status ${payment.status === 'VERIFIED' ? 'status-green' : 'status-amber'}`}>{payment.status === 'VERIFIED' ? 'Verified' : 'Rejected'}</span><small>{new Date(payment.createdAt).toLocaleDateString()}</small></div>)}</section>
+  </>;
+}
+
+type ChairmanComplaint = {
+  id: string;
+  subject: string;
+  description: string;
+  status: 'OPEN' | 'UNDER_INVESTIGATION';
+  created_at: string;
+};
+
+type ChairmanProposal = {
+  id: string;
+  title: string;
+  closes_at: string;
+};
+
+function LiveChairmanDashboard({ circleId }: { circleId: string | null }) {
+  const [complaints, setComplaints] = useState<ChairmanComplaint[]>([]);
+  const [proposals, setProposals] = useState<ChairmanProposal[]>([]);
+  const [complaintCount, setComplaintCount] = useState<number | null>(null);
+  const [proposalCount, setProposalCount] = useState<number | null>(null);
+  const [voteCount, setVoteCount] = useState<number | null>(null);
+  const [complaintError, setComplaintError] = useState('');
+  const [proposalError, setProposalError] = useState('');
+  const [voteError, setVoteError] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let current = true;
+    setComplaints([]);
+    setProposals([]);
+    setComplaintCount(null);
+    setProposalCount(null);
+    setVoteCount(null);
+    setComplaintError('');
+    setProposalError('');
+    setVoteError('');
+    setLoading(true);
+    if (!circleId || !supabase) {
+      setComplaintError('Circle records are unavailable.');
+      setProposalError('Circle records are unavailable.');
+      setVoteError('Circle records are unavailable.');
+      setLoading(false);
+      return () => { current = false; };
+    }
+
+    void (async () => {
+      try {
+        const [complaintResult, proposalResult, voteResult] = await Promise.all([
+          supabase.from('complaints')
+            .select('id, subject, description, status, created_at', { count: 'exact' })
+            .eq('circle_id', circleId)
+            .in('status', ['OPEN', 'UNDER_INVESTIGATION'])
+            .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(10),
+          supabase.from('proposals')
+            .select('id, title, closes_at', { count: 'exact' })
+            .eq('circle_id', circleId).eq('status', 'OPEN')
+            .order('closes_at', { ascending: true }).order('id', { ascending: true }).limit(10),
+          supabase.from('proposal_votes')
+            .select('proposal_id, proposals!inner(circle_id, status)', { count: 'exact', head: true })
+            .eq('proposals.circle_id', circleId).eq('proposals.status', 'OPEN'),
+        ]);
+        if (!current) return;
+        if (complaintResult.error || complaintResult.count === null) {
+          setComplaintError(complaintResult.error?.message ?? 'Could not count complaints.');
+        } else {
+          setComplaintCount(complaintResult.count);
+          setComplaints(complaintResult.data ?? []);
+        }
+        if (proposalResult.error || proposalResult.count === null) {
+          setProposalError(proposalResult.error?.message ?? 'Could not count proposals.');
+        } else {
+          setProposalCount(proposalResult.count);
+          setProposals(proposalResult.data ?? []);
+        }
+        if (voteResult.error || voteResult.count === null) {
+          setVoteError(voteResult.error?.message ?? 'Could not count proposal responses.');
+        } else {
+          setVoteCount(voteResult.count);
+        }
+      } catch (error) {
+        if (!current) return;
+        const message = error instanceof Error ? error.message : 'Could not load governance records.';
+        setComplaintError(message);
+        setProposalError(message);
+        setVoteError(message);
+      } finally {
+        if (current) setLoading(false);
+      }
+    })();
+
+    return () => { current = false; };
+  }, [circleId]);
+
+  const figure = (count: number | null, error: string) => error ? 'Unavailable' : loading ? '...' : count === null ? 'Unavailable' : String(count);
+  const date = (value: string) => new Date(value).toLocaleDateString('en-KE', {
+    timeZone: 'Africa/Nairobi', day: 'numeric', month: 'short', year: 'numeric',
+  });
+
+  return <>
+    <section className="metrics-grid operator-metrics" aria-label="Chairman summary">
+      <OperatorMetric label="OPEN COMPLAINTS" value={figure(complaintCount, complaintError)} detail="Open or under investigation" icon={MessageSquareText} tone="amber" />
+      <OperatorMetric label="OPEN PROPOSALS" value={figure(proposalCount, proposalError)} detail="Records marked open" icon={Vote} tone="blue" />
+      <OperatorMetric label="VOTES RECORDED" value={figure(voteCount, voteError)} detail="Across open proposals" icon={Users} tone="green" />
+      <OperatorMetric label="YOUR AUTHORITY" value="Governance" detail="No financial approvals" icon={Gavel} tone="teal" />
+    </section>
+    <div className="operator-layout chairman-layout">
+      <section id="chairman-complaints" className="panel operator-panel complaint-panel">
+        <div className="panel-heading"><div><div className="section-kicker">MEMBER SUPPORT</div><h2>Open complaints</h2></div></div>
+        {loading ? <p className="operator-intro">Loading complaints...</p> : complaintError ? <p className="operator-intro" role="alert">Could not load complaints: {complaintError}</p> : complaintCount === 0 ? <p className="operator-intro">No open complaints recorded.</p> : <>
+          {complaints.map((complaint) => <div className="complaint-body" key={complaint.id}>
+            <strong>{complaint.subject}</strong>
+            <p>{complaint.description}</p>
+            <small>{complaint.status === 'OPEN' ? 'Open' : 'Under investigation'} · Submitted {date(complaint.created_at)}</small>
+          </div>)}
+          {complaintCount !== null && complaintCount > complaints.length && <p className="operator-intro">Showing the latest {complaints.length} of {complaintCount} open complaints.</p>}
+        </>}
+      </section>
+      <section className="panel operator-side-panel"><div className="section-kicker">ROLE BOUNDARIES</div><h2>Governance, not finance</h2><p className="operator-intro chairman-copy">These records are read-only. Complaint handling, recommendations, and voting actions are not connected in this workspace yet.</p><div className="authority-row authority-restricted"><X size={15} /><span>Chairmen cannot approve payments or payouts</span></div></section>
+    </div>
+    <section id="chairman-proposals" className="panel operator-panel recent-approvals">
+      <div className="panel-heading"><div><div className="section-kicker">GROUP GOVERNANCE</div><h2>Open proposals</h2></div></div>
+      {loading ? <p className="operator-intro">Loading proposals...</p> : proposalError ? <p className="operator-intro" role="alert">Could not load proposals: {proposalError}</p> : proposalCount === 0 ? <p className="operator-intro">No open proposals recorded.</p> : <>
+        {proposals.map((proposal) => <div className="proposal-row" key={proposal.id}><span className="proposal-icon"><Vote size={16} /></span><span><strong>{proposal.title}</strong><small>Closing date: {date(proposal.closes_at)}</small></span><span className="status-pill status-due"><span /> Open</span></div>)}
+        {proposalCount !== null && proposalCount > proposals.length && <p className="operator-intro">Showing {proposals.length} of {proposalCount} open proposals.</p>}
+      </>}
+      {voteError && <p className="operator-intro" role="alert">Could not load vote count: {voteError}</p>}
+    </section>
   </>;
 }
 

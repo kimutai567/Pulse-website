@@ -9,7 +9,7 @@ Pulse is a community finance workspace for savings circles and other member-led 
 - Weekly contribution tracking and payment submission flow
 - Rotation payout schedule and open group proposal voting
 - Accountant workspace for reviewing and approving financial records
-- Chairman workspace for complaint review and governance recommendations
+- Chairman workspace showing stored open complaints, proposals, and vote counts (read-only)
 - System admin workspace for container health and platform operations
 - Responsive layout with mobile navigation
 
@@ -17,7 +17,9 @@ Pulse is a community finance workspace for savings circles and other member-led 
 
 Authentication and circle invitations are connected to Supabase. After applying migration `005_persistent_contributions.sql`, signed-in members can submit contribution records and accountants can verify or reject them. Submission details are restricted to the submitting member and authorized circle finance admins, and submission/review actions are written to the audit log.
 
-This workflow records payments members say they have already made; it does not initiate, receive, or automatically verify M-Pesa payments. Accountants must match the transaction reference manually. Member savings totals and history are calculated only from verified stored contributions. Loan eligibility, circle reserves, rotation payouts, and proposals are not connected and are shown as unavailable outside the demo preview.
+This workflow records payments members say they have already made; it does not initiate, receive, or automatically verify M-Pesa payments. Accountants must match the transaction reference manually. Member savings totals and history are calculated only from verified stored contributions. Loan eligibility, circle reserves, rotation payouts, and the member proposal screen are not connected and are shown as unavailable outside the demo preview.
+
+The Chairman dashboard reads existing complaint, proposal, and vote records for the signed-in user's circle. Its counts include complaints marked open or under investigation and proposals marked open; vote totals count responses to those open proposals, including proposals past their closing date until their status changes. Lists show up to ten records. Complaint handling, recommendations, proposal creation, and voting are not connected in the dashboard. Role preview uses the signed-in account's actual permissions and is read-only.
 
 The optional demo preview still uses local sample data and is explicitly labeled as a demo. Use its **View as** selector to preview the Member, Accountant, Chairman, and System admin experiences.
 
@@ -129,4 +131,4 @@ Replace the example address with the intended account and check the affected row
 
 The container and administrator invitation are saved before Supabase sends the sign-in email. If delivery fails, the platform screen offers a retry; the assignment remains pending. Existing users receive their new circle role when they next sign in and accept pending invitations. The platform administrator is not automatically enrolled in new containers.
 
-The contribution submission and accountant review flow is persistent after migration 005 is applied. Other circle dashboards and financial actions remain prototypes. Test the contribution workflow on a separate Supabase project before using it with real group records. Do not treat a submitted record as proof of payment; M-Pesa reconciliation is manual and no funds move through Pulse.
+The contribution submission and accountant review flow is persistent after migration 005 is applied. The Chairman dashboard reads existing governance records but does not yet support governance actions. Other financial actions remain prototypes. Test the contribution workflow on a separate Supabase project before using it with real group records. Do not treat a submitted record as proof of payment; M-Pesa reconciliation is manual and no funds move through Pulse.
