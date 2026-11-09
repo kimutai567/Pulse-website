@@ -13,9 +13,11 @@ Pulse is a community finance workspace for savings circles and other member-led 
 - System admin workspace for container health and platform operations
 - Responsive layout with mobile navigation
 
-## Frontend-first behavior
+## Live contribution workflow and remaining sample data
 
-Authentication and circle invitations are connected to Supabase. The dashboard figures and financial actions use sample data, including for signed-in users; they are not real financial records.
+Authentication and circle invitations are connected to Supabase. After applying migration `005_persistent_contributions.sql`, signed-in members can submit contribution records and accountants can verify or reject them. Submission details are restricted to the submitting member and authorized circle finance admins, and submission/review actions are written to the audit log.
+
+This workflow records payments members say they have already made; it does not initiate, receive, or automatically verify M-Pesa payments. Accountants must match the transaction reference manually. Other dashboard figures and financial workflows still use sample data and must not be used to manage real money.
 
 The optional demo preview still uses local sample data and is explicitly labeled as a demo. Use its **View as** selector to preview the Member, Accountant, Chairman, and System admin experiences.
 
@@ -96,18 +98,17 @@ npm run preview
 
 ## Roadmap
 
-Potential next steps for turning the prototype into a production product include:
+Next steps for turning the remaining prototype into a production product include:
 
-- Add authentication and role-based access control
-- Connect contributions, loans, payouts, and proposals to a persistent API
+- Connect loans, payouts, and proposals to persistent workflows
 - Integrate payment verification with a supported payment provider
-- Add server-side audit history and notifications
+- Add an audit history screen and notifications
 - Add automated tests for financial workflows and permission boundaries
 
 ## Supabase setup
 
 1. Copy `.env.example` to `.env.local` and add the Supabase project URL and publishable key.
-2. Run `supabase/migrations/001_initial_schema.sql`, `002_invites_and_bootstrap.sql`, and `003_accept_circle_invites.sql` in the Supabase SQL Editor, in order.
+2. Run `supabase/migrations/001_initial_schema.sql`, `002_invites_and_bootstrap.sql`, `003_accept_circle_invites.sql`, `004_platform_administration.sql` (if using platform administration), and `005_persistent_contributions.sql` in the Supabase SQL Editor, in order. On an existing project, run only migrations that have not already been applied.
 3. Enable Email authentication. Configure the Magic Link email template to include `{{ .ConfirmationURL }}` as the invitation/sign-in link and `{{ .Token }}` as a code alternative. Add the app origin (for example, `http://localhost:5173`) to Supabase's allowed redirect URLs.
 4. The first person to sign in becomes the Upendo Circle System Admin. From the admin dashboard, choose **Invite member**, enter the member's email, and assign Member, Accountant, Chairman, or System Admin. Pulse saves the role before asking Supabase Auth to email the sign-in link; after the invitee signs in, that role is applied automatically. The optional name is used for their profile.
 
@@ -128,4 +129,4 @@ Replace the example address with the intended account and check the affected row
 
 The container and administrator invitation are saved before Supabase sends the sign-in email. If delivery fails, the platform screen offers a retry; the assignment remains pending. Existing users receive their new circle role when they next sign in and accept pending invitations. The platform administrator is not automatically enrolled in new containers.
 
-Circle dashboards and financial actions remain prototypes. Do not use them for real financial operations until their data and permission flows are implemented and tested.
+The contribution submission and accountant review flow is persistent after migration 005 is applied. Other circle dashboards and financial actions remain prototypes. Test the contribution workflow on a separate Supabase project before using it with real group records. Do not treat a submitted record as proof of payment; M-Pesa reconciliation is manual and no funds move through Pulse.
