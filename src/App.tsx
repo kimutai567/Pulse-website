@@ -326,7 +326,10 @@ function App() {
         })));
       } catch (loadError) {
         if (!current) return;
-        setContributionError(loadError instanceof Error ? loadError.message : 'Could not load circle contributions.');
+        const message = loadError instanceof Error ? loadError.message : 'Could not load circle contributions.';
+        setContributionError(/contribution_year|contribution_payment_details|submit_contribution|review_contribution/i.test(message)
+          ? 'Database setup is incomplete. Ask the administrator to apply Supabase migration 005 before loading live contribution records.'
+          : message);
       } finally {
         if (current) setContributionLoading(false);
       }
@@ -344,6 +347,10 @@ function App() {
 
   async function submitPayment(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!previewMode && previewRole !== null) {
+      setPaymentError('This role preview is read-only. Return to your own dashboard to submit a real contribution.');
+      return;
+    }
     const form = event.currentTarget;
     const amount = Number(form.querySelector<HTMLInputElement>('#payment-amount')?.value);
     const phone = form.querySelector<HTMLInputElement>('#payment-sender')?.value.trim() ?? '';
@@ -528,9 +535,10 @@ function App() {
     .slice(0, 2)
     .join('')
     .toUpperCase();
-  const sampleView = previewMode || previewRole !== null;
+  const sampleView = previewMode;
   const period = currentNairobiPeriod();
-  const currentWeekContributions = contributions.filter((contribution) =>
+  const memberContributionRows = contributions.filter((contribution) => contribution.member_id === user?.id);
+  const currentWeekContributions = memberContributionRows.filter((contribution) =>
     contribution.contribution_year === period.year
       && contribution.week_number === period.week
       && contribution.contribution_type === 'WEEKLY');
@@ -552,10 +560,10 @@ function App() {
   const contributionProgress = weeklyContribution > 0
     ? Math.min(100, verifiedCurrentWeek / weeklyContribution * 100)
     : 0;
-  const yearToDateVerified = contributions
+  const yearToDateVerified = memberContributionRows
     .filter((contribution) => contribution.contribution_year === period.year && contribution.status === 'VERIFIED')
     .reduce((total, contribution) => total + contribution.amount, 0);
-  const allTimeVerified = contributions
+  const allTimeVerified = memberContributionRows
     .filter((contribution) => contribution.status === 'VERIFIED')
     .reduce((total, contribution) => total + contribution.amount, 0);
   const nairobiMonthParts = (date: Date) => new Intl.DateTimeFormat('en-CA', {
@@ -577,13 +585,13 @@ function App() {
     };
   });
   const monthSavings = new Map(memberSavingsChartData.map((item) => [item.key, 0]));
-  for (const contribution of contributions) {
+  for (const contribution of memberContributionRows) {
     if (contribution.status !== 'VERIFIED') continue;
     const createdAtParts = nairobiMonthParts(new Date(contribution.created_at));
     const key = `${createdAtParts.find((part) => part.type === 'year')?.value}-${createdAtParts.find((part) => part.type === 'month')?.value}`;
     if (monthSavings.has(key)) monthSavings.set(key, (monthSavings.get(key) ?? 0) + contribution.amount);
   }
-  let runningSavings = contributions
+  let runningSavings = memberContributionRows
     .filter((contribution) => contribution.status === 'VERIFIED' && new Date(contribution.created_at) < new Date(Date.UTC(currentMonthYear, currentMonthNumber - 5, 1)))
     .reduce((total, contribution) => total + contribution.amount, 0);
   for (const item of memberSavingsChartData) {
@@ -605,8 +613,7 @@ function App() {
         })),
       ...transactions,
     ]
-    : contributions
-      .filter((contribution) => contribution.member_id === user?.id)
+    : memberContributionRows
       .map((contribution) => ({
         initials,
         name: displayName,
@@ -713,10 +720,10 @@ function App() {
         <div className="page-content">
           {previewMode && <section className="role-notice"><CircleHelp size={17} /><span><strong>Demo preview</strong> · dashboard figures are sample data.</span><button onClick={exitDemoMode}>Return to sign in</button></section>}
           {!previewMode && <section className="role-notice"><CircleHelp size={17} /><span><strong>{sampleView ? 'Sample dashboard' : 'Contribution workflow'}</strong> · {sampleView ? 'Role previews use sample data only.' : 'Submissions and reviews are stored in Supabase; other dashboard figures are samples. Payments are not processed here.'}</span></section>}
-          {!previewMode && previewRole && <section className="role-notice"><CircleHelp size={17} /><span><strong>Previewing {viewRole.replace('_', ' ')} screen</strong> · You remain signed in as {role.replace('_', ' ')}; screen data is sample data and your permissions have not changed.</span><button onClick={() => setPreviewRole(null)}>Return to my dashboard</button></section>}
+          {!previewMode && previewRole && <section className="role-notice"><CircleHelp size={17} /><span><strong>Previewing {viewRole.replace('_', ' ')} screen</strong> · Your account is still {role.replace('_', ' ')}. Member figures use only your own verified records; actions are read-only.</span><button onClick={() => setPreviewRole(null)}>Return to my dashboard</button></section>}
           <section className="welcome-row">
             <div><div className="eyebrow"><span className="eyebrow-line" /> {sampleView ? 'FRIDAY, 25 SEPTEMBER 2026' : currentDateLong}</div><h1>{page !== 'Overview' ? page : viewRole === 'MEMBER' ? `Good morning, ${displayName}` : viewRole === 'ACCOUNTANT' ? 'Financial approvals' : viewRole === 'CHAIRMAN' ? 'Circle governance' : sampleView ? 'System operations preview' : 'Circle administration'}</h1><p className="welcome-subtitle">{page !== 'Overview' ? `Your ${sampleView ? 'Upendo Circle' : circleName} ${page.toLowerCase()} at a glance.` : viewRole === 'MEMBER' ? 'Here’s what’s happening with your circle today.' : viewRole === 'ACCOUNTANT' ? sampleView ? 'Verify contributions, review disbursements and reconcile circle transactions.' : 'Match member-submitted weekly payments and record your review.' : viewRole === 'CHAIRMAN' ? 'Support members and keep circle governance moving.' : sampleView ? 'This preview contains demo-only system figures.' : 'Manage membership and review real contribution activity for your circle.'}</p></div>
-            <div className="welcome-actions"><button className="button button-quiet" onClick={() => flash(viewRole === 'CHAIRMAN' ? 'Opening active proposals.' : viewRole === 'SYSTEM_ADMIN' ? sampleView ? 'The system report is a demo preview.' : 'System-wide reporting is not connected yet.' : 'Your monthly report is being prepared.')}><ChartNoAxesColumnIncreasing size={16} /> {viewRole === 'CHAIRMAN' ? 'Proposals' : viewRole === 'SYSTEM_ADMIN' ? 'System report' : 'Reports'}</button>{viewRole === 'MEMBER' ? <button className="button button-primary" onClick={() => { setPaymentError(''); setModal('payment'); }}><Plus size={17} /> Log a payment</button> : viewRole === 'ACCOUNTANT' || (viewRole === 'SYSTEM_ADMIN' && page === 'Contributions') ? <button className="button button-primary" onClick={() => { if (sampleView) flash('Demo review queue refreshed.'); else setContributionRefresh((value) => value + 1); }}><RotateCcw size={15} /> Refresh queue</button> : viewRole === 'CHAIRMAN' ? <button className="button button-primary" onClick={() => flash('Complaint review opened in demo mode.')}><MessageSquareText size={15} /> Review complaint</button> : sampleView ? <button className="button button-primary" onClick={() => flash('Container creation is a demo-only preview.')}><Plus size={17} /> Create container · demo</button> : <button className="button button-primary" onClick={() => role === 'SYSTEM_ADMIN' ? setModal('invite') : flash('Admin actions are unavailable in a role preview.')}><Plus size={17} /> Invite member</button>}</div>
+            <div className="welcome-actions"><button className="button button-quiet" onClick={() => flash(viewRole === 'CHAIRMAN' ? 'Opening active proposals.' : viewRole === 'SYSTEM_ADMIN' ? sampleView ? 'The system report is a demo preview.' : 'System-wide reporting is not connected yet.' : 'Your monthly report is being prepared.')}><ChartNoAxesColumnIncreasing size={16} /> {viewRole === 'CHAIRMAN' ? 'Proposals' : viewRole === 'SYSTEM_ADMIN' ? 'System report' : 'Reports'}</button>{viewRole === 'MEMBER' ? <button className="button button-primary" disabled={previewRole !== null && !sampleView} onClick={() => { setPaymentError(''); setModal('payment'); }}><Plus size={17} /> {previewRole !== null && !sampleView ? 'Preview only' : 'Log a payment'}</button> : viewRole === 'ACCOUNTANT' || (viewRole === 'SYSTEM_ADMIN' && page === 'Contributions') ? <button className="button button-primary" onClick={() => { if (sampleView || previewRole !== null) flash('Role preview is read-only.'); else setContributionRefresh((value) => value + 1); }}><RotateCcw size={15} /> Refresh queue</button> : viewRole === 'CHAIRMAN' ? <button className="button button-primary" onClick={() => flash('Complaint review opened in demo mode.')}><MessageSquareText size={15} /> Review complaint</button> : sampleView ? <button className="button button-primary" onClick={() => flash('Container creation is a demo-only preview.')}><Plus size={17} /> Create container · demo</button> : <button className="button button-primary" onClick={() => role === 'SYSTEM_ADMIN' && previewRole === null ? setModal('invite') : flash('Admin actions are unavailable in a role preview.')}><Plus size={17} /> Invite member</button>}</div>
           </section>
 
           {viewRole === 'ACCOUNTANT' && <section className="role-notice"><ShieldCheck size={17} /><span><strong>Accountant workspace</strong> · {sampleView ? '3 demo items need your review' : contributionError ? 'Contribution queue unavailable' : `${accountantPendingCount} contribution${accountantPendingCount === 1 ? '' : 's'} need review`}</span><button onClick={() => setPage('Contributions')}>Review queue <ArrowRightIcon /></button></section>}
@@ -769,6 +776,7 @@ function App() {
           </> : viewRole === 'ACCOUNTANT' ? <AccountantDashboard
             payments={accountantPayments}
             isPreview={sampleView}
+            isReadOnly={previewRole !== null && !sampleView}
             isLoading={contributionLoading}
             error={contributionError}
             onReviewPayment={sampleView ? reviewDemoPayment : reviewContribution}
@@ -776,6 +784,7 @@ function App() {
           /> : viewRole === 'CHAIRMAN' ? <ChairmanDashboard onNotify={flash} /> : viewRole === 'SYSTEM_ADMIN' && page === 'Contributions' ? <AccountantDashboard
             payments={accountantPayments}
             isPreview={sampleView}
+            isReadOnly={previewRole !== null && !sampleView}
             isLoading={contributionLoading}
             error={contributionError}
             onReviewPayment={sampleView ? reviewDemoPayment : reviewContribution}
@@ -1027,9 +1036,10 @@ function CompleteProfile({ userId, email, initialName, onSaved, onSignOut }: {
   );
 }
 
-function AccountantDashboard({ payments, isPreview, isLoading, error, onReviewPayment, onNotify }: {
+function AccountantDashboard({ payments, isPreview, isReadOnly, isLoading, error, onReviewPayment, onNotify }: {
   payments: DemoPayment[];
   isPreview: boolean;
+  isReadOnly: boolean;
   isLoading: boolean;
   error: string;
   onReviewPayment: (id: string, status: Exclude<DemoPaymentStatus, 'PENDING'>, reason?: string) => void | Promise<void>;
@@ -1062,6 +1072,10 @@ function AccountantDashboard({ payments, isPreview, isLoading, error, onReviewPa
   const reconcilePercent = payments.length ? Math.round(verifiedPayments.length / payments.length * 100) : 0;
 
   async function decide(id: string, result: 'Approved' | 'Rejected') {
+    if (isReadOnly) {
+      onNotify('Role preview is read-only. Return to your own dashboard to review contributions.');
+      return;
+    }
     let rejectionReason: string | undefined;
     if (result === 'Rejected') {
       const reason = window.prompt('Enter a reason for rejecting this financial record:');
@@ -1104,7 +1118,7 @@ function AccountantDashboard({ payments, isPreview, isLoading, error, onReviewPa
             <span className="approval-icon"><Icon size={17} /></span>
             <div className="approval-main"><div className="approval-title"><strong>{item.member}</strong><span>{item.type}</span></div><div className="approval-meta"><span>Ref: {item.reference}{item.phone ? ` · ${item.phone}` : ''}</span><span>{item.date}</span></div></div>
             <div className="approval-amount">{fmt(item.amount)}</div>
-            {decision ? <span className={`table-status ${decision === 'Approved' ? 'status-green' : 'status-amber'}`}>{decision}</span> : <div className="approval-actions"><button className="approval-reject" onClick={() => void decide(item.id, 'Rejected')} disabled={reviewing === item.id}>Reject</button><button className="approval-approve" onClick={() => void decide(item.id, 'Approved')} disabled={reviewing === item.id}>{reviewing === item.id ? 'Saving...' : <><Check size={13} /> Approve</>}</button></div>}
+            {decision ? <span className={`table-status ${decision === 'Approved' ? 'status-green' : 'status-amber'}`}>{decision}</span> : <div className="approval-actions"><button className="approval-reject" onClick={() => void decide(item.id, 'Rejected')} disabled={isReadOnly || reviewing === item.id}>Reject</button><button className="approval-approve" onClick={() => void decide(item.id, 'Approved')} disabled={isReadOnly || reviewing === item.id}>{isReadOnly ? 'Preview only' : reviewing === item.id ? 'Saving...' : <><Check size={13} /> Approve</>}</button></div>}
           </article>;
         })}</div>
       </section>
