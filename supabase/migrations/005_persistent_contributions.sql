@@ -9,7 +9,7 @@ alter table public.contributions
   alter column contribution_year set default extract(isoyear from (now() at time zone 'Africa/Nairobi'))::integer,
   alter column contribution_year set not null,
   alter column week_number set default extract(week from (now() at time zone 'Africa/Nairobi'))::integer,
-  drop constraint contributions_circle_id_member_id_week_number_contribution_type_key;
+  drop constraint contributions_circle_id_member_id_week_number_contribution__key;
 
 create index contributions_circle_period_idx
   on public.contributions (circle_id, contribution_year desc, week_number desc, created_at desc);
