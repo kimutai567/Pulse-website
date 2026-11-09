@@ -17,7 +17,7 @@ Pulse is a community finance workspace for savings circles and other member-led 
 
 Authentication and circle invitations are connected to Supabase. After applying migration `005_persistent_contributions.sql`, signed-in members can submit contribution records and accountants can verify or reject them. Submission details are restricted to the submitting member and authorized circle finance admins, and submission/review actions are written to the audit log.
 
-This workflow records payments members say they have already made; it does not initiate, receive, or automatically verify M-Pesa payments. Accountants must match the transaction reference manually. Other dashboard figures and financial workflows still use sample data and must not be used to manage real money.
+This workflow records payments members say they have already made; it does not initiate, receive, or automatically verify M-Pesa payments. Accountants must match the transaction reference manually. Member savings totals and history are calculated only from verified stored contributions. Loan eligibility, circle reserves, rotation payouts, and proposals are not connected and are shown as unavailable outside the demo preview.
 
 The optional demo preview still uses local sample data and is explicitly labeled as a demo. Use its **View as** selector to preview the Member, Accountant, Chairman, and System admin experiences.
 
