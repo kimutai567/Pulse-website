@@ -20,6 +20,18 @@ Authentication and circle invitations are connected to Supabase. After applying 
 
 This workflow records payments members say they have already made; it does not initiate, receive, or automatically verify M-Pesa payments. Accountants must match the transaction reference manually. Member savings totals and history are calculated only from verified stored contributions. Loan eligibility, circle reserves, rotation payouts, and the member proposal screen are not connected and are shown as unavailable outside the demo preview.
 
+### Upendo reserve and loan rules
+
+The following confirmed rules supersede conflicting reserve and loan terms in the product specification for Upendo Circle:
+
+- The full KES 200 of a KES 1,000 weekly contribution goes to the reserve. For partial payments, 20% goes to the reserve. No part of this allocation goes to the admin pool.
+- After completing a full rotation, every member has a starting loan limit of at least KES 1,000. Limits can grow with savings; above the starting limit, the specified self-guaranteed and guarantor-backed savings limits apply.
+- The reserve starts at KES 0. Normal loans are funded from the reserve and can begin after a full rotation, before the one-year vote. There is no protected minimum reserve balance for these loans.
+- Standard terms are 10% flat interest, repayment within 14 days, a 7-day grace period, and a KES 150 fine when grace ends and every 7 days thereafter while a balance remains. Repayments are allocated to fines, then interest, then principal. All interest and fines go to the admin pool; principal repayments return to the reserve.
+- Accountants and system admins will verify opening savings and completed rotations. Disbursements and repayments will be recorded and verified manually; Pulse will not transfer money.
+
+These are intended rules, not connected functionality. Loan eligibility, requests, reserve balances, and repayments are not yet tracked. A cutoff for existing records is still needed before the system can safely determine available loan funds. The existing contribution dashboard does not calculate the reserve allocation.
+
 The Chairman dashboard reads existing complaint, proposal, and vote records for the signed-in user's circle. Its counts include complaints marked open or under investigation and proposals marked open; vote totals count responses to those open proposals, including proposals past their closing date until their status changes. Lists show up to ten records. Complaint handling, recommendations, proposal creation, and voting are not connected in the dashboard. Role preview uses the signed-in account's actual permissions and is read-only.
 
 After migration `006_circle_chat.sql` is applied, all current members can read and send messages in their circle's shared chat. New members can read messages from before they joined; former members lose access. Messages remain stored until manually removed by a database administrator or the circle itself is deleted, and the app does not offer message editing or deletion. The chat is not end-to-end encrypted and is intended for circle-wide discussion, not private messages or secrets. Use Refresh to check for new messages and Load older messages to browse history. Demo mode cannot access real chats; role previews can read with the signed-in account's permissions but cannot send.
