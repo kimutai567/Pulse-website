@@ -13,6 +13,7 @@ import {
 import type { User } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import CircleChat from './CircleChat';
+import LoanEstimate from './LoanEstimate';
 
 type Role = 'MEMBER' | 'ACCOUNTANT' | 'CHAIRMAN' | 'SYSTEM_ADMIN';
 type Page = 'Overview' | 'Contributions' | 'Rotation' | 'Loans' | 'Reserve & dividends' | 'Votes & proposals' | 'Activity' | 'Circle chat';
@@ -345,6 +346,16 @@ function App() {
   function flash(message: string) {
     setNotice(message);
     window.setTimeout(() => setNotice(''), 3400);
+  }
+
+  async function signOut() {
+    if (!supabase) {
+      flash('Sign out is unavailable because authentication is not configured.');
+      return;
+    }
+
+    const { error } = await supabase.auth.signOut();
+    if (error) flash(`Could not sign out: ${error.message}`);
   }
 
   async function submitPayment(event: React.FormEvent<HTMLFormElement>) {
@@ -701,7 +712,8 @@ function App() {
 
         <div className="sidebar-bottom">
           <div className="help-card"><span className="help-icon"><CircleHelp size={16} /></span><strong>Need a hand?</strong><span>We’re here to help your group grow.</span><button onClick={() => flash('Help centre opened.')}>Visit help centre <ArrowUpRight size={13} /></button></div>
-          <div className="profile-row"><div className="profile-avatar">{initials}</div><div className="profile-copy"><strong>{displayName}</strong><span>{user?.email ?? 'Preview mode'}{profilePhone ? ` · ${profilePhone}` : ''} · {role}</span></div><button className="icon-button profile-more" aria-label={previewMode ? 'Exit demo' : 'Sign out'} title={previewMode ? 'Exit demo' : 'Sign out'} onClick={() => previewMode ? exitDemoMode() : supabase?.auth.signOut()}><LogOut size={18} /></button></div>
+          <div className="profile-row"><div className="profile-avatar">{initials}</div><div className="profile-copy"><strong>{displayName}</strong><span>{user?.email ?? 'Preview mode'}{profilePhone ? ` · ${profilePhone}` : ''} · {role}</span></div></div>
+          <button className="nav-link" type="button" onClick={() => previewMode ? exitDemoMode() : void signOut()}><LogOut size={17} strokeWidth={1.8} /><span>{previewMode ? 'Exit demo' : 'Sign out'}</span></button>
         </div>
       </aside>
 
@@ -732,7 +744,7 @@ function App() {
           {viewRole === 'CHAIRMAN' && <section className="role-notice chairman-notice"><MessageSquareText size={17} /><span><strong>Chairman workspace</strong> · {sampleView ? '1 demo complaint needs attention' : 'Circle governance records are shown below.'}</span></section>}
           {viewRole === 'SYSTEM_ADMIN' && <section className="role-notice admin-notice"><ShieldCheck size={17} /><span><strong>{sampleView ? 'System admin preview' : 'Circle administration'}</strong> · {sampleView ? 'The preview contains sample figures.' : 'Live membership and contribution records for this circle.'}</span>{!sampleView && <button onClick={() => setPage('Contributions')}>Review contributions <ArrowRightIcon /></button>}</section>}
 
-          {page === 'Circle chat' ? sampleView ? <section className="panel chat-panel"><h2>Circle chat</h2><p className="chat-help">Chat is available to signed-in circle members, not in demo mode.</p></section> : circleId && user ? <CircleChat key={`${circleId}-${user.id}`} circleId={circleId} userId={user.id} readOnly={previewRole !== null} /> : <section className="panel chat-panel"><p className="chat-error" role="alert">Your circle is unavailable. Sign in again to access chat.</p></section> : viewRole === 'MEMBER' ? <>
+          {page === 'Loans' && !sampleView ? <LoanEstimate /> : page === 'Circle chat' ? sampleView ? <section className="panel chat-panel"><h2>Circle chat</h2><p className="chat-help">Chat is available to signed-in circle members, not in demo mode.</p></section> : circleId && user ? <CircleChat key={`${circleId}-${user.id}`} circleId={circleId} userId={user.id} readOnly={previewRole !== null} /> : <section className="panel chat-panel"><p className="chat-error" role="alert">Your circle is unavailable. Sign in again to access chat.</p></section> : viewRole === 'MEMBER' ? <>
           <section className="metrics-grid" aria-label="Circle summary">
             <article className="metric-card metric-savings"><div className="metric-heading"><span>{sampleView ? 'MY SAVINGS' : 'MY VERIFIED CONTRIBUTIONS'}</span><span className="metric-icon green-icon"><Wallet size={16} /></span></div><div className="metric-value">{sampleView ? 'KES 24,800' : contributionError ? 'Unavailable' : contributionLoading ? '...' : fmt(allTimeVerified)}</div><div className="metric-foot"><span className="positive-change">{sampleView ? '8.2%' : 'Confirmed records only'}</span><span>{sampleView ? 'vs. last month' : 'All time'}</span><button aria-label="Savings details" onClick={() => setPage('Activity')}><ArrowUpRight size={15} /></button></div>{sampleView && <span className="metric-spark spark-green" />}</article>
             <article className="metric-card"><div className="metric-heading"><span>{sampleView ? 'CONTRIBUTED THIS CYCLE' : 'VERIFIED THIS YEAR'}</span><span className="metric-icon blue-icon"><Coins size={16} /></span></div><div className="metric-value">{sampleView ? 'KES 4,000' : contributionError ? 'Unavailable' : contributionLoading ? '...' : fmt(yearToDateVerified)}</div><div className="metric-foot"><span className="foot-dot green-dot" />{sampleView ? '4 of 4 weeks complete' : `${period.year} verified records`}<button aria-label="Contribution details" onClick={() => setPage('Contributions')}><ArrowUpRight size={15} /></button></div>{sampleView && <span className="metric-spark spark-blue" />}</article>
