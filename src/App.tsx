@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
+import { getGreeting } from './lib/greeting';
 import CircleChat from './CircleChat';
 import LoanEstimate from './LoanEstimate';
 
@@ -100,6 +101,7 @@ function currentNairobiPeriod() {
 }
 
 function App() {
+  const [greeting, setGreeting] = useState(() => getGreeting(new Date()));
   const [isDemo, setIsDemo] = useState(() => {
     return new URLSearchParams(window.location.search).get('preview') === '1';
   });
@@ -133,6 +135,11 @@ function App() {
   const [circleId, setCircleId] = useState<string | null>(null);
   const viewRole = previewMode ? role : previewRole ?? role;
   const canPreviewRoles = previewMode || role !== 'MEMBER';
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setGreeting(getGreeting(new Date())), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (previewMode || !user || !supabase) return;
@@ -736,7 +743,7 @@ function App() {
           {!previewMode && <section className="role-notice"><CircleHelp size={17} /><span><strong>Live workspace</strong> · Connected figures come from Supabase. Other features are marked unavailable. Payments are not processed here.</span></section>}
           {!previewMode && previewRole && <section className="role-notice"><CircleHelp size={17} /><span><strong>Previewing {viewRole.replace('_', ' ')} screen</strong> · Your account is still {role.replace('_', ' ')}. Member figures use only your own verified records; actions are read-only.</span><button onClick={() => setPreviewRole(null)}>Return to my dashboard</button></section>}
           <section className="welcome-row">
-            <div><div className="eyebrow"><span className="eyebrow-line" /> {sampleView ? 'FRIDAY, 25 SEPTEMBER 2026' : currentDateLong}</div><h1>{page !== 'Overview' ? page : viewRole === 'MEMBER' ? `Good morning, ${displayName}` : viewRole === 'ACCOUNTANT' ? 'Financial approvals' : viewRole === 'CHAIRMAN' ? 'Circle governance' : sampleView ? 'System operations preview' : 'Circle administration'}</h1><p className="welcome-subtitle">{page !== 'Overview' ? `Your ${sampleView ? 'Upendo Circle' : circleName} ${page.toLowerCase()} at a glance.` : viewRole === 'MEMBER' ? 'Here’s what’s happening with your circle today.' : viewRole === 'ACCOUNTANT' ? sampleView ? 'Verify contributions, review disbursements and reconcile circle transactions.' : 'Match member-submitted weekly payments and record your review.' : viewRole === 'CHAIRMAN' ? 'Support members and keep circle governance moving.' : sampleView ? 'This preview contains demo-only system figures.' : 'Manage membership and review real contribution activity for your circle.'}</p></div>
+            <div><div className="eyebrow"><span className="eyebrow-line" /> {sampleView ? 'FRIDAY, 25 SEPTEMBER 2026' : currentDateLong}</div><h1>{page !== 'Overview' ? page : viewRole === 'MEMBER' ? `${greeting}, ${displayName}` : viewRole === 'ACCOUNTANT' ? 'Financial approvals' : viewRole === 'CHAIRMAN' ? 'Circle governance' : sampleView ? 'System operations preview' : 'Circle administration'}</h1><p className="welcome-subtitle">{page !== 'Overview' ? `Your ${sampleView ? 'Upendo Circle' : circleName} ${page.toLowerCase()} at a glance.` : viewRole === 'MEMBER' ? 'Here’s what’s happening with your circle today.' : viewRole === 'ACCOUNTANT' ? sampleView ? 'Verify contributions, review disbursements and reconcile circle transactions.' : 'Match member-submitted weekly payments and record your review.' : viewRole === 'CHAIRMAN' ? 'Support members and keep circle governance moving.' : sampleView ? 'This preview contains demo-only system figures.' : 'Manage membership and review real contribution activity for your circle.'}</p></div>
             {page !== 'Circle chat' && <div className="welcome-actions"><button className="button button-quiet" onClick={() => viewRole === 'CHAIRMAN' && !sampleView ? document.getElementById('chairman-proposals')?.scrollIntoView({ behavior: 'smooth' }) : flash(viewRole === 'CHAIRMAN' ? 'Opening active proposals.' : viewRole === 'SYSTEM_ADMIN' ? sampleView ? 'The system report is a demo preview.' : 'System-wide reporting is not connected yet.' : 'Your monthly report is being prepared.')}><ChartNoAxesColumnIncreasing size={16} /> {viewRole === 'CHAIRMAN' ? 'Proposals' : viewRole === 'SYSTEM_ADMIN' ? 'System report' : 'Reports'}</button>{viewRole === 'MEMBER' ? <button className="button button-primary" disabled={previewRole !== null && !sampleView} onClick={() => { setPaymentError(''); setModal('payment'); }}><Plus size={17} /> {previewRole !== null && !sampleView ? 'Preview only' : 'Log a payment'}</button> : viewRole === 'ACCOUNTANT' || (viewRole === 'SYSTEM_ADMIN' && page === 'Contributions') ? <button className="button button-primary" onClick={() => { if (sampleView || previewRole !== null) flash('Role preview is read-only.'); else setContributionRefresh((value) => value + 1); }}><RotateCcw size={15} /> Refresh queue</button> : viewRole === 'CHAIRMAN' ? <button className="button button-primary" onClick={() => sampleView ? flash('Complaint review opened in demo mode.') : document.getElementById('chairman-complaints')?.scrollIntoView({ behavior: 'smooth' })}><MessageSquareText size={15} /> View complaints</button> : sampleView ? <button className="button button-primary" onClick={() => flash('Container creation is a demo-only preview.')}><Plus size={17} /> Create container · demo</button> : <button className="button button-primary" onClick={() => role === 'SYSTEM_ADMIN' && previewRole === null ? setModal('invite') : flash('Admin actions are unavailable in a role preview.')}><Plus size={17} /> Invite member</button>}</div>}
           </section>
 
