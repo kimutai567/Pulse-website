@@ -296,7 +296,7 @@ function App() {
           profileNames = new Map((profiles ?? []).map((profile) => [profile.id, profile.full_name]));
         }
 
-        const paymentDetailRows: { contribution_id: string; payment_reference: string; payment_phone: string; rejection_reason: string | null }[] = [];
+        const paymentDetailRows: { contribution_id: string; payment_reference: string; payment_phone: string | null; rejection_reason: string | null }[] = [];
         for (let offset = 0; offset < records.length; offset += 100) {
           const contributionIds = records.slice(offset, offset + 100).map((record) => record.id);
           const { data: details, error: detailsError } = await supabase
@@ -805,6 +805,8 @@ function App() {
             onNotify={flash}
           /> : <AdminDashboard
             circleName={sampleView ? 'Upendo Circle' : circleName}
+            circleId={circleId}
+            currentUserId={user?.id ?? null}
             memberCount={circleMemberCount}
             isLoading={contributionLoading}
             error={contributionError}
@@ -816,6 +818,7 @@ function App() {
             isPreview={sampleView}
             onInvite={() => role === 'SYSTEM_ADMIN' && !previewRole && !previewMode ? setModal('invite') : flash('Admin actions are unavailable in a role preview.')}
             onReviewQueue={() => setPage('Contributions')}
+            onMembersChanged={() => setContributionRefresh((value) => value + 1)}
           />}
         </div>
       </main>
@@ -1352,6 +1355,8 @@ function InviteModal({ onClose, onSend }: {
 
 function AdminDashboard({
   circleName,
+  circleId,
+  currentUserId,
   memberCount,
   isLoading,
   error,
@@ -1363,8 +1368,11 @@ function AdminDashboard({
   isPreview,
   onInvite,
   onReviewQueue,
+  onMembersChanged,
 }: {
   circleName: string;
+  circleId: string | null;
+  currentUserId: string | null;
   memberCount: number;
   isLoading: boolean;
   error: string;
@@ -1376,6 +1384,7 @@ function AdminDashboard({
   isPreview: boolean;
   onInvite: () => void;
   onReviewQueue: () => void;
+  onMembersChanged: () => void;
 }) {
   return <>
     {error && <section className="role-notice" role="alert"><CircleHelp size={17} /><span><strong>Circle data could not be loaded</strong> · {error}</span></section>}
@@ -1386,11 +1395,128 @@ function AdminDashboard({
       <OperatorMetric label="REJECTED CONTRIBUTIONS" value={isPreview ? 'Preview' : isLoading ? '...' : error ? 'Unavailable' : String(rejectedCount)} detail={isPreview ? 'Demo preview only' : 'Live review records'} icon={FileClock} tone="teal" />
     </section>
     <div className="admin-action-row"><div><div className="section-kicker">CIRCLE ADMINISTRATION</div><strong>{circleName}</strong></div><div><button className="button button-quiet" onClick={onReviewQueue}><CreditCard size={15} /> Review contributions</button>{!isPreview && <button className="button button-primary" onClick={onInvite}><Plus size={15} /> Invite member</button>}</div></div>
+    {!isPreview && circleId && <CircleMemberManagement circleId={circleId} currentUserId={currentUserId} onMembersChanged={onMembersChanged} />}
     <div className="operator-layout admin-layout">
       <section className="panel operator-panel"><div className="panel-heading"><div><div className="section-kicker">{isPreview ? 'DEMO PREVIEW' : 'LIVE CIRCLE DATA'}</div><h2>Contribution overview</h2></div><span className={`status-pill ${!isPreview && pendingCount ? 'status-due' : 'status-green'}`}><span /> {isPreview ? 'Preview only' : isLoading ? 'Loading' : error ? 'Unavailable' : `${pendingCount} pending`}</span></div><p className="operator-intro">{isPreview ? 'Demo contribution figures are intentionally hidden. Return to your real System Admin dashboard to view stored circle data.' : 'Verified and pending totals are calculated from this circle’s stored contribution records. Submitted amounts are member-reported and are not confirmed by an automatic M-Pesa integration.'}</p><div className="reconcile-row"><span>Circle members</span><strong>{isPreview ? 'Preview only' : isLoading ? '...' : error ? 'Unavailable' : memberCount}</strong></div><div className="reconcile-row"><span>Verified contribution records</span><strong>{isPreview ? 'Preview only' : isLoading ? '...' : error ? 'Unavailable' : `${verifiedCount} · ${fmt(verifiedTotal)}`}</strong></div><div className="reconcile-row"><span>Awaiting accountant review</span><strong>{isPreview ? 'Preview only' : isLoading ? '...' : error ? 'Unavailable' : `${pendingCount} · ${fmt(pendingTotal)}`}</strong></div><div className="reconcile-row"><span>Rejected records</span><strong>{isPreview ? 'Preview only' : isLoading ? '...' : error ? 'Unavailable' : rejectedCount}</strong></div><div className="operator-guardrail"><ShieldCheck size={16} /><span>Members, accountants, and system admins see only the circle records allowed by their account role.</span></div><button className="operator-text-button" onClick={onReviewQueue}>Open contribution queue <ChevronRight size={14} /></button></section>
       <section className="panel operator-side-panel"><div className="section-kicker">CONNECTED WORKFLOWS</div><h2>{isPreview ? 'Preview is not live' : 'What’s live today'}</h2><div className="authority-row"><CheckCircle2 size={15} /><span>Circle membership and invited roles</span></div><div className="authority-row"><CheckCircle2 size={15} /><span>Contribution submissions and reviews</span></div><div className="authority-row authority-restricted"><Clock3 size={15} /><span>Payment processing, loans, payouts, platform-wide network monitoring, and scheduled jobs are not connected.</span></div>{!isPreview && <button className="operator-text-button" onClick={onInvite}><Users size={14} /> Manage circle invitations <ChevronRight size={14} /></button>}</section>
     </div>
   </>;
+}
+
+type CircleMember = {
+  user_id: string;
+  full_name: string;
+  email: string;
+  role: Role;
+};
+
+function CircleMemberManagement({
+  circleId,
+  currentUserId,
+  onMembersChanged,
+}: {
+  circleId: string;
+  currentUserId: string | null;
+  onMembersChanged: () => void;
+}) {
+  const [members, setMembers] = useState<CircleMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyUserId, setBusyUserId] = useState('');
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
+    if (!supabase) {
+      setError('Supabase is not configured.');
+      setLoading(false);
+      return () => { active = false; };
+    }
+
+    supabase.rpc('list_circle_members_for_admin', { target_circle: circleId })
+      .then(({ data, error: loadError }) => {
+        if (!active) return;
+        if (loadError) setError(`Could not load circle members: ${loadError.message}`);
+        else setMembers(data ?? []);
+        setLoading(false);
+      })
+      .catch((loadError: unknown) => {
+        if (!active) return;
+        setError(`Could not load circle members: ${loadError instanceof Error ? loadError.message : 'Unknown error'}`);
+        setLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [circleId]);
+
+  async function deleteAccount(member: CircleMember) {
+    const confirmed = window.confirm(
+      `Permanently delete ${member.full_name} (${member.email})? Their sign-in account and circle access will be removed. Financial and history records will be retained with identifying profile and payment-phone details anonymized. You can invite this email again later. This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    if (!supabase) {
+      setError('Supabase is not configured.');
+      return;
+    }
+
+    setBusyUserId(member.user_id);
+    setError('');
+    setNotice('');
+    try {
+      const { error: deleteError } = await supabase.rpc('delete_circle_member_account', {
+        target_circle: circleId,
+        target_user: member.user_id,
+      });
+      if (deleteError) {
+        setError(`Could not delete ${member.full_name}'s account: ${deleteError.message}`);
+        return;
+      }
+
+      setMembers((current) => current.filter((item) => item.user_id !== member.user_id));
+      setNotice(`Account for ${member.email} was deleted. Financial history was retained and anonymized; you can invite this email again later.`);
+      onMembersChanged();
+    } catch (deleteError) {
+      setError(`Could not delete ${member.full_name}'s account: ${deleteError instanceof Error ? deleteError.message : 'Unknown error'}`);
+    } finally {
+      setBusyUserId('');
+    }
+  }
+
+  return (
+    <section className="panel member-management">
+      <div className="panel-heading">
+        <div><div className="section-kicker">CIRCLE MEMBERS</div><h2>Manage user accounts</h2></div>
+        <span className="status-pill status-green"><span /> {members.length} active</span>
+      </div>
+      <p className="operator-intro">Deleting an account removes its sign-in access and circle memberships. Financial history is retained with identifying profile and payment-phone details anonymized. You can invite the email again later.</p>
+      {error && <p className="auth-error" role="alert">{error}</p>}
+      {notice && <p className="form-safe-note" role="status">{notice}</p>}
+      {loading ? <p className="operator-intro">Loading members...</p> : members.length === 0 ? <p className="operator-intro">No active members found.</p> : (
+        <ul className="member-management-list">
+          {members.map((member) => (
+            <li key={member.user_id}>
+              <span className="member-management-identity">
+                <strong>{member.full_name || 'Circle member'}</strong>
+                <small>{member.email} · {member.role.replace('_', ' ')}</small>
+              </span>
+              {member.user_id === currentUserId
+                ? <span className="member-current-account">Your account</span>
+                : <button
+                  className="button button-quiet member-delete-button"
+                  type="button"
+                  disabled={!!busyUserId}
+                  onClick={() => void deleteAccount(member)}
+                >
+                  {busyUserId === member.user_id ? 'Deleting...' : 'Delete account'}
+                </button>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 }
 
 function OperatorMetric({ label, value, detail, icon: Icon, tone }: { label: string; value: string; detail: string; icon: typeof Home; tone: 'green' | 'blue' | 'amber' | 'teal' }) {

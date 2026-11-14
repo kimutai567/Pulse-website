@@ -36,6 +36,8 @@ The Chairman dashboard reads existing complaint, proposal, and vote records for 
 
 After migration `006_circle_chat.sql` is applied, all current members can read and send messages in their circle's shared chat. New members can read messages from before they joined; former members lose access. Messages remain stored until manually removed by a database administrator or the circle itself is deleted, and the app does not offer message editing or deletion. The chat is not end-to-end encrypted and is intended for circle-wide discussion, not private messages or secrets. Use Refresh to check for new messages and Load older messages to browse history. Demo mode cannot access real chats; role previews can read with the signed-in account's permissions but cannot send.
 
+After applying migration `007_admin_account_deletion.sql`, circle System Admins can delete member accounts from the circle administration dashboard. Deletion removes the user's Supabase Auth account and circle memberships, retains financial and history records under an anonymized profile, and clears stored payment phone numbers. Self-deletion, platform administrator deletion, and deletion of the last System Admin in any affected circle are blocked. The deleted email can be invited again using **Invite member**.
+
 The optional demo preview still uses local sample data and is explicitly labeled as a demo. Use its **View as** selector to preview the Member, Accountant, Chairman, and System admin experiences.
 
 ## Supabase email OTP setup
