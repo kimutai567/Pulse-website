@@ -104,7 +104,7 @@ npm run preview
     ├── App.tsx         # Dashboard UI, Supabase auth, demo state, and role views
     ├── main.tsx        # React application entry point
     ├── styles.css      # Responsive visual design and layout styles
-    └── lib/supabase.ts # Supabase client configuration
+    └── lib/            # Supabase client and contribution utilities
 ```
 
 ## Available scripts
@@ -114,6 +114,10 @@ npm run preview
 | `npm run dev` | Start the Vite development server |
 | `npm run build` | Type-check and build the production bundle |
 | `npm run preview` | Serve the production bundle locally |
+| `npm test` | Run the automated tests |
+| `npm run test:integration` | Test contribution permissions and audit logging against a disposable Supabase project |
+
+Integration tests create temporary users and a circle, then remove them. Configure `PULSE_TEST_SUPABASE_URL`, `PULSE_TEST_SUPABASE_ANON_KEY`, `PULSE_TEST_SUPABASE_SERVICE_ROLE_KEY`, and `PULSE_TEST_SUPABASE_PROJECT_REF` in the local environment, and set `PULSE_TEST_SUPABASE_ALLOW_MUTATIONS=yes` to confirm that the target is disposable. The project reference must match the Supabase URL. Never use production credentials or commit these values.
 
 ## Roadmap
 

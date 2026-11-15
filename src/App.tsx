@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
+import { sumVerifiedContributionAmount } from './lib/contributions';
 import { getGreeting } from './lib/greeting';
 import CircleChat from './CircleChat';
 import LoanEstimate from './LoanEstimate';
@@ -562,9 +563,7 @@ function App() {
     contribution.contribution_year === period.year
       && contribution.week_number === period.week
       && contribution.contribution_type === 'WEEKLY');
-  const verifiedCurrentWeek = currentWeekContributions
-    .filter((contribution) => contribution.status === 'VERIFIED')
-    .reduce((total, contribution) => total + contribution.amount, 0);
+  const verifiedCurrentWeek = sumVerifiedContributionAmount(currentWeekContributions);
   const currentWeekPending = currentWeekContributions.some((contribution) => contribution.status === 'PENDING');
   const currentWeekVerified = currentWeekContributions.some((contribution) => contribution.status === 'VERIFIED');
   const currentWeekRejected = currentWeekContributions.some((contribution) => contribution.status === 'REJECTED');
@@ -580,12 +579,10 @@ function App() {
   const contributionProgress = weeklyContribution > 0
     ? Math.min(100, verifiedCurrentWeek / weeklyContribution * 100)
     : 0;
-  const yearToDateVerified = memberContributionRows
-    .filter((contribution) => contribution.contribution_year === period.year && contribution.status === 'VERIFIED')
-    .reduce((total, contribution) => total + contribution.amount, 0);
-  const allTimeVerified = memberContributionRows
-    .filter((contribution) => contribution.status === 'VERIFIED')
-    .reduce((total, contribution) => total + contribution.amount, 0);
+  const yearToDateVerified = sumVerifiedContributionAmount(
+    memberContributionRows.filter((contribution) => contribution.contribution_year === period.year),
+  );
+  const allTimeVerified = sumVerifiedContributionAmount(memberContributionRows);
   const nairobiMonthParts = (date: Date) => new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Africa/Nairobi',
     year: 'numeric',
@@ -611,9 +608,10 @@ function App() {
     const key = `${createdAtParts.find((part) => part.type === 'year')?.value}-${createdAtParts.find((part) => part.type === 'month')?.value}`;
     if (monthSavings.has(key)) monthSavings.set(key, (monthSavings.get(key) ?? 0) + contribution.amount);
   }
-  let runningSavings = memberContributionRows
-    .filter((contribution) => contribution.status === 'VERIFIED' && new Date(contribution.created_at) < new Date(Date.UTC(currentMonthYear, currentMonthNumber - 5, 1)))
-    .reduce((total, contribution) => total + contribution.amount, 0);
+  let runningSavings = sumVerifiedContributionAmount(
+    memberContributionRows.filter((contribution) =>
+      new Date(contribution.created_at) < new Date(Date.UTC(currentMonthYear, currentMonthNumber - 5, 1))),
+  );
   for (const item of memberSavingsChartData) {
     runningSavings += monthSavings.get(item.key) ?? 0;
     item.savings = runningSavings;
@@ -659,9 +657,7 @@ function App() {
       rejectionReason: contribution.payment_rejection_reason ?? undefined,
     }));
   const accountantPendingCount = accountantPayments.filter((payment) => payment.status === 'PENDING').length;
-  const verifiedContributionTotal = contributions
-    .filter((contribution) => contribution.status === 'VERIFIED')
-    .reduce((total, contribution) => total + contribution.amount, 0);
+  const verifiedContributionTotal = sumVerifiedContributionAmount(contributions);
   const pendingContributionTotal = contributions
     .filter((contribution) => contribution.status === 'PENDING')
     .reduce((total, contribution) => total + contribution.amount, 0);
