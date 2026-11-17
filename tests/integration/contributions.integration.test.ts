@@ -112,7 +112,7 @@ test('contribution submission and review enforce roles and write audit records',
   const accountantClient = await signIn(accountant);
   const outsiderClient = await signIn(outsider);
 
-  async function submitContribution(client: ReturnType<typeof createClient>, reference: string) {
+  async function submitContribution(client: Awaited<ReturnType<typeof signIn>>, reference: string) {
     const { data, error } = await client.rpc('submit_contribution', {
       target_circle: testCircleId,
       contribution_amount: 1000,
